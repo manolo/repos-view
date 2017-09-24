@@ -231,14 +231,17 @@
           if (this.cache.indexOf(i.id) >= 0) {
             return false;
           }
+          return true;
           this.cache.push(i.id);
           const re = RegExp(/gwt|swing|spring|java$/i.test(this.query) ?
             '^java$' : /javascript|angular|vue|react/i.test(this.query) ?
             'javascript|typescript|vue|react|angular' : '.*', 'i');
           window.r = re;
-          return i.description && !i.fork
+          return i.description
+            && !i.fork
             && i.open_issues
-            && re.test(i.language);
+            && re.test(i.language)
+            ;
         }));
         this.updated = this.repos.filter(i => i.pushed_at > '2017-04');
         this.stared = this.repos.filter(i => i.stargazers_count > 40);
