@@ -41,13 +41,13 @@
     </style>
     <iron-ajax id="ajax"
        url="https://api.github.com/search/repositories?q=[[query]]&per_page=100&page=[[page]]&access_token=1fbf9c8ba72f581fbc9feebc811ade3ebfcb93bb"
-       last-response="{{response}}"
+       last-response="{{response}}" last-error="{{response}}"
        ></iron-ajax>
 
        <vaadin-grid items="[[_filter(repos, search)]]">
          <vaadin-grid-column-group>
            <template class="header">
-             <vaadin-progress-bar value=[[progress]] min="0" max="1000"></vaadin-progress-bar>
+             <vaadin-progress-bar value=[[progress]] min="0" max="[[max]]"></vaadin-progress-bar>
              <div style="display: flex">
                <vaadin-text-field placeholder="Type your Query and push Enter ..." value="{{query}}" style="flex: 1; padding: 0 20px 0 0" on-keydown="_query"></vaadin-text-field>
                <vaadin-text-field placeholder="Filter ..." value="{{search}}" style="flex: 1; padding: 0 20px 0 0"></vaadin-text-field>
@@ -131,6 +131,10 @@
             type: Object,
             observer: '_onResponse'
           },
+          error: {
+            type: Object,
+            observer: '_onError'
+          },
           repos: {
             type: Array,
             value: []
@@ -177,11 +181,35 @@
         window.t = this;
       }
 
+      _query(e) {
+        if (e.which == 13 && this.query) {
+          e.preventDefault();
+          e.stopPropagation();
+          this.progress = 50;
+          this.page = 1;
+          this.repos = [];
+          this.starred = [];
+          this.updated = [];
+          this.$.ajax.generateRequest();
+          this.cache = [];
+        }
+      }
+
+      _onError(e) {
+        console.log(e);
+      }
+
       _onResponse(r) {
-        if (!r || !r.items) {
+        if (!r) {
+          return;
+        }
+        if (r.error) {
+          this.progress = this.max;
           return;
         }
         this.total = r.total_count;
+        this.max = Math.min(2000, this.total);
+
         this.progress = this.progress + r.items.length + 100;
 
         this.repos = this.repos.concat(r.items.filter(i => {
@@ -206,20 +234,6 @@
           this.$.ajax.generateRequest();
         }
         window.dispatchEvent(new CustomEvent('resize'), {});
-      }
-
-      _query(e) {
-        if (e.which == 13 && this.query) {
-          e.preventDefault();
-          e.stopPropagation();
-          this.progress = 50;
-          this.page = 1;
-          this.repos = [];
-          this.starred = [];
-          this.updated = [];
-          this.$.ajax.generateRequest();
-          this.cache = [];
-        }
       }
 
       _score(s) {
