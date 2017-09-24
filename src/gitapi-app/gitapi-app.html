@@ -1,0 +1,243 @@
+<link rel="import" href="../../bower_components/polymer/polymer-element.html">
+
+<link rel="import" href="../../bower_components/vaadin-valo-theme/color.html">
+<link rel="import" href="../../bower_components/vaadin-valo-theme/typography.html">
+<link rel="import" href="../../bower_components/vaadin-valo-theme/sizing-and-spacing.html">
+<link rel="import" href="../../bower_components/vaadin-valo-theme/style.html">
+<link rel="import" href="../../bower_components/vaadin-valo-theme/icons.html">
+<link rel="import" href="../../bower_components/vaadin-valo-theme/font-icons.html">
+<link rel="import" href="../../bower_components/vaadin-valo-theme/vaadin-text-field.html">
+<link rel="import" href="../../bower_components/vaadin-valo-theme/vaadin-grid.html">
+
+<link rel="import" href="../../bower_components/iron-ajax/iron-ajax.html">
+
+<link rel="import" href="../../bower_components/vaadin-grid/vaadin-grid.html">
+<link rel="import" href="../../bower_components/vaadin-grid/vaadin-grid-sorter.html">
+<link rel="import" href="../../bower_components/vaadin-grid/vaadin-grid-column-group.html">
+<link rel="import" href="../../bower_components/vaadin-text-field/vaadin-text-field.html">
+<link rel="import" href="../../bower_components/vaadin-progress-bar/vaadin-progress-bar.html">
+
+<link rel="import" href="timestamp-diff.html">
+
+<dom-module id="gitapi-app">
+  <template>
+    <style>
+      :host {
+        display: block;
+        position: absolute;
+        top: 0;
+        left: 0;
+        bottom: 0;
+        right: 0;
+        font-family: sans-serif;
+        padding: 10px;
+      }
+      vaadin-grid {
+        height: 100%;
+      }
+      a, a:visited {
+        color: inherit;
+      }
+    </style>
+    <iron-ajax id="ajax"
+       url="https://api.github.com/search/repositories?q=[[query]]&per_page=100&page=[[page]]&access_token=1fbf9c8ba72f581fbc9feebc811ade3ebfcb93bb"
+       last-response="{{response}}"
+       ></iron-ajax>
+
+       <vaadin-grid items="[[_filter(repos, search)]]">
+         <vaadin-grid-column-group>
+           <template class="header">
+             <vaadin-progress-bar value=[[progress]] min="0" max="1000"></vaadin-progress-bar>
+             <div style="display: flex">
+               <vaadin-text-field placeholder="Type your Query and push Enter ..." value="{{query}}" style="flex: 1; padding: 0 20px 0 0" on-keydown="_query"></vaadin-text-field>
+               <vaadin-text-field placeholder="Filter ..." value="{{search}}" style="flex: 1; padding: 0 20px 0 0"></vaadin-text-field>
+               <div style="padding: 0 10px">Total: [[total]]</div>
+               <div style="padding: 0 10px">Updated: [[updated.length]]</div>
+               <div style="padding: 0 10px">Stared: [[stared.length]]</div>
+               <div style="padding: 0 10px">stars: [[stars]]</div>
+             </div>
+           </template>
+           <vaadin-grid-column flex-grow="0" width="300px">
+             <template class="header">
+               <vaadin-grid-sorter path="name">Element</vaadin-grid-sorter>
+             </template>
+             <template>
+               <a href="https://github.com/[[item.full_name]]" target="_blank" style="direction: rtl">
+                 [[item.owner.login]]/<strong>[[item.name]]</strong></a>
+             </template>
+           </vaadin-grid-column>
+           <vaadin-grid-column flex-grow="1">
+             <template class="header">Description</template>
+             <template>
+               <img style="position: absolute; width: 35px; border-radius: 50%; opacity: 0.8"
+               src="[[item.owner.avatar_url]]"></img>
+               <strong style="padding-left: 40px">[[item.description]]</strong>
+             </template>
+           </vaadin-grid-column>
+           <vaadin-grid-column  width="150px" flex-grow="0">
+             <template class="header">
+               <vaadin-grid-sorter path="pushed_at">Last Push</vaadin-grid-sorter>
+             </template>
+             <template><timestamp-diff timestamp="[[item.pushed_at]]" color="white"></timestamp-diff></template>
+           </vaadin-grid-column>
+           <vaadin-grid-column  width="100px" flex-grow="0">
+             <template class="header">
+               <vaadin-grid-sorter path="language">Lang</vaadin-grid-sorter>
+             </template>
+             <template>[[item.language]]</timestamp-diff></template>
+           </vaadin-grid-column>
+           <vaadin-grid-column  width="100px" flex-grow="0">
+             <template class="header">
+               <vaadin-grid-sorter path="open_issues">Issues</vaadin-grid-sorter>
+             </template>
+             <template>[[item.open_issues]]</timestamp-diff></template>
+           </vaadin-grid-column>
+           <vaadin-grid-column  width="100px" flex-grow="0">
+             <template class="header">
+               <vaadin-grid-sorter path="forks_count">Fork</vaadin-grid-sorter>
+             </template>
+             <template>[[item.forks_count]]</template>
+           </vaadin-grid-column>
+           <vaadin-grid-column  width="100px" flex-grow="0">
+             <template class="header">
+               <vaadin-grid-sorter path="stargazers_count">Star</vaadin-grid-sorter>
+             </template>
+             <template>[[item.stargazers_count]]</template>
+           </vaadin-grid-column>
+           <vaadin-grid-column  width="100px" flex-grow="0">
+             <template class="header">
+               <vaadin-grid-sorter path="score" direction="desc">Score</vaadin-grid-sorter>
+             </template>
+             <template>[[_score(item.score)]]</template>
+           </vaadin-grid-column>
+         </vaadin-grid-column-group>
+       </vaadin-grid>
+  </template>
+
+  <script>
+    /**
+     * @customElement
+     * @polymer
+     */
+    class GitapiApp extends Polymer.Element {
+      static get is() { return 'gitapi-app'; }
+      static get properties() {
+        return {
+          page: {
+            type: Number,
+            value: 1
+          },
+          response: {
+            type: Object,
+            observer: '_onResponse'
+          },
+          repos: {
+            type: Array,
+            value: []
+          },
+          updated: {
+            type: Array,
+            value: []
+          },
+          stared: {
+            type: Array,
+            value: []
+          },
+          max: {
+            type: Number,
+            value: 6000
+          },
+          progress: {
+            type: Number,
+            value: 0
+          },
+          total: {
+            type: Number,
+            value: 0
+          },
+          stars: {
+            type: Number,
+            value: 0
+          },
+          query: {
+            type: String,
+            value: function() {
+              var r = /[?&]q=([^&]+)/.exec(location.search) || '';
+            }
+          },
+          cache: {
+            type: Array,
+            value: []
+          }
+        };
+      }
+
+      ready() {
+        super.ready();
+        window.t = this;
+      }
+
+      _onResponse(r) {
+        if (!r || !r.items) {
+          return;
+        }
+        this.total = r.total_count;
+        this.progress = this.progress + r.items.length + 100;
+
+        this.repos = this.repos.concat(r.items.filter(i => {
+          if (this.cache.indexOf(i.id) >= 0) {
+            return false;
+          }
+          this.cache.push(i.id);
+          const re = RegExp(/gwt|swing|spring|java$/i.test(this.query) ?
+            '^java$' : /javascript|angular|vue|react/i.test(this.query) ?
+            'javascript|typescript|vue|react|angular' : '.*', 'i');
+          window.r = re;
+          return i.description && !i.fork
+            && i.open_issues
+            && re.test(i.language);
+        }));
+        this.updated = this.repos.filter(i => i.pushed_at > '2017-04');
+        this.stared = this.repos.filter(i => i.stargazers_count > 40);
+        this.stars = this.repos.reduce((l, i) => l + i.stargazers_count, 0);
+        const total = Math.min(this.max, r.total_count), items = r.items, l = r.items ? items.length: 0;
+        if (total && l && total > (this.page * l)) {
+          this.page ++;
+          this.$.ajax.generateRequest();
+        }
+        window.dispatchEvent(new CustomEvent('resize'), {});
+      }
+
+      _query(e) {
+        if (e.which == 13 && this.query) {
+          e.preventDefault();
+          e.stopPropagation();
+          this.progress = 50;
+          this.page = 1;
+          this.repos = [];
+          this.starred = [];
+          this.updated = [];
+          this.$.ajax.generateRequest();
+          this.cache = [];
+        }
+      }
+
+      _score(s) {
+        return String(s).replace(/\..+$/,'');
+      }
+
+      _filter(items, search) {
+        if (items) {
+          return !search ? items.slice(0) : items.filter((item) => {
+            return Object.keys(item).reduce((last, current) => {
+              return last || typeof item[current] == 'string'
+                && item[current].toLowerCase().includes(search.toLowerCase());
+            }, false);
+          });
+        }
+       }
+     }
+
+    window.customElements.define(GitapiApp.is, GitapiApp);
+  </script>
+</dom-module>

@@ -1,0 +1,7 @@
+{
+  "name": "gitapi",
+  "short_name": "gitapi",
+  "description": "ask github api",
+  "start_url": "/",
+  "display": "standalone"
+}

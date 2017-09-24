@@ -1,0 +1,47 @@
+<script src="../../bower_components/moment/min/moment.min.js"></script>
+
+<dom-module id="timestamp-diff">
+  <template>
+    <style>
+      div {
+        padding: 5px;
+        border-radius: 3px;
+      }
+    </style>
+    <div style="background-color: [[color]]">[[_display]]</div>
+  </template>
+  <script>
+    Polymer({
+      is: 'timestamp-diff',
+
+      properties: {
+        color: {
+          type: String,
+          value: 'grey'
+        },
+        timestamp: String,
+        _display: String
+      },
+
+      observers: ['_timestampChanged(timestamp)'],
+
+      ready: function() {
+        setInterval(function() {
+          this._timestampChanged(this.timestamp);
+        }.bind(this), 60000);
+      },
+
+      _timestampChanged: function(timestamp) {
+        if (timestamp) {
+          var timeDiff = Math.ceil(Math.abs(Date.now() - Date.parse(timestamp)) / (1000 * 3600 * 24));
+          this.color = timeDiff > (3 * 30) ? '#ff5722' : timeDiff < (3 * 30) ? '#8BC34A' : '#cddc39';
+          this._display = this._diff(Date.now(), Date.parse(timestamp));
+        }
+      },
+
+      _diff: function(date1, date2) {
+        return moment(date2).from(date1);
+      }
+    });
+  </script>
+</dom-module>
