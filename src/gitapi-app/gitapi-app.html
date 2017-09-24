@@ -25,10 +25,7 @@
       :host {
         display: block;
         position: absolute;
-        top: 0;
-        left: 0;
-        bottom: 0;
-        right: 0;
+        top: 0; left: 0; bottom: 0; right: 0;
         font-family: sans-serif;
         padding: 10px;
       }
@@ -38,23 +35,38 @@
       a, a:visited {
         color: inherit;
       }
+      .top {
+        display: flex;
+      }
+      .top > vaadin-text-field {
+        flex: 1
+      }
+      .top > * {
+        padding: 0 15px 0 0;
+      }
+      img {
+        position: absolute; width: 35px; border-radius: 50%; opacity: 0.8;
+      }
+      .desc {
+        padding-left: 40px;
+      }
     </style>
     <iron-ajax id="ajax"
        url="https://api.github.com/search/repositories?q=[[query]]&per_page=100&page=[[page]]&access_token=1fbf9c8ba72f581fbc9feebc811ade3ebfcb93bb"
        last-response="{{response}}" last-error="{{response}}"
        ></iron-ajax>
 
-       <vaadin-grid items="[[_filter(repos, search)]]">
+       <vaadin-grid items="[[_filter(repos, search)]]" multi-sort>
          <vaadin-grid-column-group>
            <template class="header">
              <vaadin-progress-bar value=[[progress]] min="0" max="[[max]]"></vaadin-progress-bar>
-             <div style="display: flex">
-               <vaadin-text-field placeholder="Type your Query and push Enter ..." value="{{query}}" style="flex: 1; padding: 0 20px 0 0" on-keydown="_query"></vaadin-text-field>
-               <vaadin-text-field placeholder="Filter ..." value="{{search}}" style="flex: 1; padding: 0 20px 0 0"></vaadin-text-field>
-               <div style="padding: 0 10px">Total: [[total]]</div>
-               <div style="padding: 0 10px">Updated: [[updated.length]]</div>
-               <div style="padding: 0 10px">Stared: [[stared.length]]</div>
-               <div style="padding: 0 10px">stars: [[stars]]</div>
+             <div class="top">
+               <vaadin-text-field placeholder="Type your Query and push Enter ..." value="{{query}}" on-keydown="_query"></vaadin-text-field>
+               <vaadin-text-field placeholder="Filter ..." value="{{search}}"></vaadin-text-field>
+               <div>Total: [[total]]</div>
+               <div>Updated: [[updated.length]]</div>
+               <div>Stared: [[stared.length]]</div>
+               <div>stars: [[stars]]</div>
              </div>
            </template>
            <vaadin-grid-column flex-grow="0" width="300px">
@@ -69,9 +81,8 @@
            <vaadin-grid-column flex-grow="1">
              <template class="header">Description</template>
              <template>
-               <img style="position: absolute; width: 35px; border-radius: 50%; opacity: 0.8"
-               src="[[item.owner.avatar_url]]"></img>
-               <strong style="padding-left: 40px">[[item.description]]</strong>
+               <img src="[[item.owner.avatar_url]]"></img>
+               <strong class="desc">[[item.description]]</strong>
              </template>
            </vaadin-grid-column>
            <vaadin-grid-column  width="150px" flex-grow="0">
@@ -100,13 +111,13 @@
            </vaadin-grid-column>
            <vaadin-grid-column  width="100px" flex-grow="0">
              <template class="header">
-               <vaadin-grid-sorter path="stargazers_count">Star</vaadin-grid-sorter>
+               <vaadin-grid-sorter path="stargazers_count" direction="desc">Star</vaadin-grid-sorter>
              </template>
              <template>[[item.stargazers_count]]</template>
            </vaadin-grid-column>
            <vaadin-grid-column  width="100px" flex-grow="0">
              <template class="header">
-               <vaadin-grid-sorter path="score" direction="desc">Score</vaadin-grid-sorter>
+               <vaadin-grid-sorter path="score">Score</vaadin-grid-sorter>
              </template>
              <template>[[_score(item.score)]]</template>
            </vaadin-grid-column>
@@ -166,7 +177,8 @@
           query: {
             type: String,
             value: function() {
-              var r = /[?&]q=([^&]+)/.exec(location.search) || '';
+              var r = /[?&]q=([^&]+)/.exec(location.search);
+              return r ? r[1] : '';
             }
           },
           cache: {
@@ -178,7 +190,9 @@
 
       ready() {
         super.ready();
-        window.t = this;
+        if (this.query) {
+          this.$.ajax.generateRequest();
+        }
       }
 
       _query(e) {
@@ -190,8 +204,8 @@
           this.repos = [];
           this.starred = [];
           this.updated = [];
-          this.$.ajax.generateRequest();
           this.cache = [];
+          this.$.ajax.generateRequest();
         }
       }
 
