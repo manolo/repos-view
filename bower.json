@@ -3,14 +3,10 @@
   "description": "Polymer2 Github Repository viewer",
   "main": "index.html",
   "dependencies": {
-    "polymer": "Polymer/polymer#^2.0.0",
-    "vaadin-grid": "4.0-preview",
-    "iron-ajax": "^2.0.0",
-    "vaadin-combo-box": "master",
-    "moment": "^2",
-    "vaadin-valo-theme": "master",
-    "vaadin-material-theme": "master",
-    "vaadin-progress-bar": "^1.0.0-alpha2"
+    "iron-ajax": "^2.1.2",
+    "vaadin-grid": "v5.0.0-beta3",
+    "vaadin-combo-box": "v4.0.0-beta3",
+    "vaadin-progress-bar": "v1.0.0-beta1"
   },
   "devDependencies": {
     "web-component-tester": "Polymer/web-component-tester#^6.0.0",
