@@ -43,7 +43,8 @@
       }
     </style>
     <iron-ajax id="ajax"
-       url="https://api.github.com/search/repositories?q=[[query]]&per_page=100&page=[[page]]&access_token=7e3c1fd3683bbb6f275ed2bc5337ec920dc6fdb3"
+       url="https://api.github.com/search/repositories?q=[[query]]&per_page=100&page=[[page]]"
+       headers='{"Authorization": "token put_your_token_here"}'
        last-response="{{response}}" last-error="{{response}}"
        ></iron-ajax>
 
