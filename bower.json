@@ -3,13 +3,13 @@
   "description": "Polymer2 Github Repository viewer",
   "main": "index.html",
   "dependencies": {
-    "iron-ajax": "^2.1.2",
-    "vaadin-grid": "v5.0.0-beta3",
-    "vaadin-combo-box": "v4.0.0-beta3",
-    "vaadin-progress-bar": "v1.0.0-beta1"
+    "iron-ajax": "^2.1.3",
+    "vaadin-grid": "5.7.7",
+    "vaadin-combo-box": "5.4.7",
+    "vaadin-progress-bar": "1.3.0"
   },
   "devDependencies": {
     "web-component-tester": "Polymer/web-component-tester#^6.0.0",
-    "webcomponentsjs": "webcomponents/webcomponentsjs#^1.0.0"
+    "webcomponentsjs": "webcomponents/webcomponentsjs#^1.2.6"
   }
 }
