@@ -47,6 +47,7 @@ This program is available under Apache License Version 2.0, available at https:/
 
         static get properties() {
           return {
+            /** @private */
             _childColumns: {
               value: function() {
                 return this._getChildColumns(this);
@@ -55,6 +56,7 @@ This program is available under Apache License Version 2.0, available at https:/
 
             /**
              * Flex grow ratio for the column group as the sum of the ratios of its child columns.
+             * @attr {number} flex-grow
              */
             flexGrow: {
               type: Number,
@@ -69,10 +71,13 @@ This program is available under Apache License Version 2.0, available at https:/
               readOnly: true
             },
 
+            /** @private */
             _visibleChildColumns: Array,
 
+            /** @private */
             _colSpan: Number,
 
+            /** @private */
             _rootColumns: Array
           };
         }
@@ -104,6 +109,11 @@ This program is available under Apache License Version 2.0, available at https:/
           this._observer && this._observer.disconnect();
         }
 
+        /**
+         * @param {string} path
+         * @param {unknown=} value
+         * @protected
+         */
         _columnPropChanged(path, value) {
           if (path === 'hidden') {
             this._preventHiddenCascade = true;
@@ -126,8 +136,15 @@ This program is available under Apache License Version 2.0, available at https:/
           }
         }
 
+        /** @private */
         _groupOrderChanged(order, rootColumns) {
-          if (order && rootColumns) {
+          if (rootColumns) {
+            const _rootColumns = rootColumns.slice(0);
+
+            if (!order) {
+              _rootColumns.forEach(column => column._order = 0);
+              return;
+            }
             // The parent column order number cascades downwards to it's children
             // so that the resulting order numbering constructs as follows:
             // [             1000              ]
@@ -144,7 +161,7 @@ This program is available under Apache License Version 2.0, available at https:/
             // Final scope for the child columns needs to mind both factors.
             const scope = Math.pow(10, trailingZeros - childCountDigits);
 
-            const _rootColumns = rootColumns.slice(0);
+
             if (_rootColumns[0] && _rootColumns[0]._order) {
               _rootColumns.sort((a, b) => a._order - b._order);
             }
@@ -153,6 +170,7 @@ This program is available under Apache License Version 2.0, available at https:/
           }
         }
 
+        /** @private */
         _groupReorderStatusChanged(reorderStatus, rootColumns) {
           if (reorderStatus === undefined || rootColumns === undefined) {
             return;
@@ -161,18 +179,21 @@ This program is available under Apache License Version 2.0, available at https:/
           rootColumns.forEach(column => column._reorderStatus = reorderStatus);
         }
 
+        /** @private */
         _groupResizableChanged(resizable, rootColumns) {
-          if (rootColumns === undefined) {
+          if (resizable === undefined || rootColumns === undefined) {
             return;
           }
 
           rootColumns.forEach(column => column.resizable = resizable);
         }
 
+        /** @private */
         _updateVisibleChildColumns(childColumns) {
           this._visibleChildColumns = Array.prototype.filter.call(childColumns, col => !col.hidden);
         }
 
+        /** @private */
         _childColumnsChanged(childColumns) {
           if (!this._autoHidden && this.hidden) {
             Array.prototype.forEach.call(childColumns, column => column.hidden = true);
@@ -180,6 +201,7 @@ This program is available under Apache License Version 2.0, available at https:/
           }
         }
 
+        /** @protected */
         _updateFlexAndWidth() {
           if (!this._visibleChildColumns) {
             return;
@@ -197,6 +219,7 @@ This program is available under Apache License Version 2.0, available at https:/
           this._setFlexGrow(Array.prototype.reduce.call(this._visibleChildColumns, (prev, curr) => prev + curr.flexGrow, 0));
         }
 
+        /** @private */
         _groupFrozenChanged(frozen, rootColumns) {
           if (rootColumns === undefined || frozen === undefined) {
             return;
@@ -208,6 +231,7 @@ This program is available under Apache License Version 2.0, available at https:/
           }
         }
 
+        /** @private */
         _groupHiddenChanged(hidden, rootColumns) {
           if (rootColumns && !this._preventHiddenCascade) {
             this._ignoreVisibleChildColumns = true;
@@ -218,6 +242,7 @@ This program is available under Apache License Version 2.0, available at https:/
           this._columnPropChanged('hidden');
         }
 
+        /** @private */
         _visibleChildColumnsChanged(visibleChildColumns) {
           this._colSpan = visibleChildColumns.length;
 
@@ -230,6 +255,7 @@ This program is available under Apache License Version 2.0, available at https:/
           }
         }
 
+        /** @private */
         _colSpanChanged(colSpan, headerCell, footerCell) {
           if (headerCell) {
             headerCell.setAttribute('colspan', colSpan);
@@ -241,10 +267,16 @@ This program is available under Apache License Version 2.0, available at https:/
           }
         }
 
+        /**
+         * @param {!GridColumnGroupElement} el
+         * @return {!Array<!GridColumnElement>}
+         * @protected
+         */
         _getChildColumns(el) {
           return Polymer.FlattenedNodesObserver.getFlattenedNodes(el).filter(this._isColumnElement);
         }
 
+        /** @private */
         _addNodeObserver() {
           this._observer = new Polymer.FlattenedNodesObserver(this, info => {
             if (info.addedNodes.filter(this._isColumnElement).length > 0 ||
@@ -264,6 +296,11 @@ This program is available under Apache License Version 2.0, available at https:/
           this._observer.flush();
         }
 
+        /**
+         * @param {!Node} node
+         * @return {boolean}
+         * @protected
+         */
         _isColumnElement(node) {
           return node.nodeType === Node.ELEMENT_NODE && /\bcolumn\b/.test(node.localName);
         }

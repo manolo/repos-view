@@ -5,6 +5,7 @@ This program is available under Apache License Version 2.0, available at https:/
 -->
 
 <link rel="import" href="../../polymer/polymer-element.html">
+<link rel="import" href="../../polymer/lib/mixins/disable-upgrade-mixin.html">
 <link rel="import" href="../../vaadin-overlay/src/vaadin-overlay.html">
 <link rel="import" href="../../iron-resizable-behavior/iron-resizable-behavior.html">
 
@@ -19,9 +20,25 @@ This program is available under Apache License Version 2.0, available at https:/
         display: none;
       }
     </style>
-    <vaadin-combo-box-overlay id="overlay" hidden$="[[hidden]]" opened="[[opened]]" template="{{template}}" style="align-items: stretch; margin: 0;">
+    <vaadin-combo-box-overlay
+        id="overlay"
+        hidden$="[[hidden]]"
+        opened="[[opened]]"
+        template="{{template}}"
+        style="align-items: stretch; margin: 0;"
+        theme$="[[theme]]">
       <slot></slot>
     </vaadin-combo-box-overlay>
+  </template>
+</dom-module>
+
+<dom-module id="vaadin-combo-box-overlay-styles" theme-for="vaadin-combo-box-overlay">
+  <template>
+    <style>
+      :host {
+        width: var(--vaadin-combo-box-overlay-width, var(--_vaadin-combo-box-overlay-default-width, auto));
+      }
+    </style>
   </template>
 </dom-module>
 
@@ -44,6 +61,26 @@ This program is available under Apache License Version 2.0, available at https:/
       static get is() {
         return 'vaadin-combo-box-overlay';
       }
+
+      connectedCallback() {
+        super.connectedCallback();
+
+        const dropdown = this.__dataHost;
+        const comboBoxOverlay = dropdown.getRootNode().host;
+        const comboBox = comboBoxOverlay && comboBoxOverlay.getRootNode().host;
+        const hostDir = comboBox && comboBox.getAttribute('dir');
+        if (hostDir) {
+          this.setAttribute('dir', hostDir);
+        }
+      }
+
+      ready() {
+        super.ready();
+        const loader = document.createElement('div');
+        loader.setAttribute('part', 'loader');
+        const content = this.shadowRoot.querySelector('[part~="content"]');
+        content.parentNode.insertBefore(loader, content);
+      }
     }
 
     customElements.define(ComboBoxOverlayElement.is, ComboBoxOverlayElement);
@@ -54,7 +91,9 @@ This program is available under Apache License Version 2.0, available at https:/
      * @memberof Vaadin
      * @private
      */
-    class ComboBoxDropdownElement extends Polymer.mixinBehaviors(Polymer.IronResizableBehavior, Polymer.Element) {
+    class ComboBoxDropdownElement extends Polymer.DisableUpgradeMixin(
+      Polymer.mixinBehaviors(Polymer.IronResizableBehavior, Polymer.Element)) {
+
       static get is() {
         return 'vaadin-combo-box-dropdown';
       }
@@ -63,28 +102,12 @@ This program is available under Apache License Version 2.0, available at https:/
         return {
           opened: {
             type: Boolean,
-            notify: true
+            observer: '_openedChanged'
           },
 
           template: {
             type: Object,
             notify: true
-          },
-
-          /**
-           * True if the device supports touch events.
-           */
-          touchDevice: {
-            type: Boolean,
-            reflectToAttribute: true,
-            value: () => {
-              try {
-                document.createEvent('TouchEvent');
-                return true;
-              } catch (e) {
-                return false;
-              }
-            }
           },
 
           /**
@@ -100,17 +123,19 @@ This program is available under Apache License Version 2.0, available at https:/
           alignedAbove: {
             type: Boolean,
             value: false
-          }
-        };
-      }
+          },
 
-      static get observers() {
-        return ['_openedChanged(opened)'];
+          /**
+           * Used to propagate the `theme` attribute from the host element.
+           */
+          theme: String
+        };
       }
 
       constructor() {
         super();
         this._boundSetPosition = this._setPosition.bind(this);
+        this._boundOutsideClickListener = this._outsideClickListener.bind(this);
       }
 
       connectedCallback() {
@@ -156,17 +181,21 @@ This program is available under Apache License Version 2.0, available at https:/
        * @event vaadin-combo-box-dropdown-closed
        */
 
-      _openedChanged(opened) {
+      _openedChanged(opened, oldValue) {
+        if (!!opened === !!oldValue) {
+          return;
+        }
+
         if (opened) {
           this.$.overlay.style.position = this._isPositionFixed(this.positionTarget) ? 'fixed' : 'absolute';
           this._setPosition();
 
           window.addEventListener('scroll', this._boundSetPosition, true);
-          document.addEventListener('click', this._outsideClickListener.bind(this), true);
+          document.addEventListener('click', this._boundOutsideClickListener, true);
           this.dispatchEvent(new CustomEvent('vaadin-combo-box-dropdown-opened', {bubbles: true, composed: true}));
-        } else {
+        } else if (!this.__emptyItems) {
           window.removeEventListener('scroll', this._boundSetPosition, true);
-          document.removeEventListener('click', this._outsideClickListener.bind(this), true);
+          document.removeEventListener('click', this._boundOutsideClickListener, true);
           this.dispatchEvent(new CustomEvent('vaadin-combo-box-dropdown-closed', {bubbles: true, composed: true}));
         }
       }
@@ -207,17 +236,46 @@ This program is available under Apache License Version 2.0, available at https:/
         return this.alignedAbove ? -overlayRect.height : targetRect.height;
       }
 
-      _shouldAlignAbove() {
+      _shouldAlignAbove(targetRect) {
         const spaceBelow = (
           window.innerHeight -
-          this.positionTarget.getBoundingClientRect().bottom -
+          targetRect.bottom -
           Math.min(document.body.scrollTop, 0)
         ) / window.innerHeight;
 
         return spaceBelow < 0.30;
       }
 
+      _getCustomWidth() {
+        return window.ShadyCSS ?
+          window.ShadyCSS.getComputedStyleValue(this, '--vaadin-combo-box-overlay-width') :
+          getComputedStyle(this).getPropertyValue('--vaadin-combo-box-overlay-width');
+      }
+
+      _setOverlayWidth() {
+        const inputWidth = this.positionTarget.clientWidth + 'px';
+        const customWidth = this._getCustomWidth();
+
+        if (window.ShadyCSS && !window.ShadyCSS.nativeCss) {
+          window.ShadyCSS.styleSubtree(this.$.overlay, {
+            '--vaadin-combo-box-overlay-width': customWidth,
+            '--_vaadin-combo-box-overlay-default-width': inputWidth
+          });
+        } else {
+          this.$.overlay.style.setProperty('--_vaadin-combo-box-overlay-default-width', inputWidth);
+
+          if (customWidth === '') {
+            this.$.overlay.style.removeProperty('--vaadin-combo-box-overlay-width');
+          } else {
+            this.$.overlay.style.setProperty('--vaadin-combo-box-overlay-width', customWidth);
+          }
+        }
+      }
+
       _setPosition(e) {
+        if (this.hidden) {
+          return;
+        }
         if (e && e.target) {
           const target = e.target === document ? document.body : e.target;
           const parent = this.$.overlay.parentElement;
@@ -227,7 +285,7 @@ This program is available under Apache License Version 2.0, available at https:/
         }
 
         const targetRect = this.positionTarget.getBoundingClientRect();
-        this.alignedAbove = this._shouldAlignAbove();
+        this.alignedAbove = this._shouldAlignAbove(targetRect);
 
         const overlayRect = this.$.overlay.getBoundingClientRect();
         this._translateX = targetRect.left - overlayRect.left + (this._translateX || 0);
@@ -239,8 +297,9 @@ This program is available under Apache License Version 2.0, available at https:/
         this._translateY = Math.round(this._translateY * _devicePixelRatio) / _devicePixelRatio;
         this.$.overlay.style.transform = `translate3d(${this._translateX}px, ${this._translateY}px, 0)`;
 
-        this.$.overlay.style.width = this.positionTarget.clientWidth + 'px';
         this.$.overlay.style.justifyContent = this.alignedAbove ? 'flex-end' : 'flex-start';
+
+        this._setOverlayWidth();
 
         // TODO: fire only when position actually changes changes
         this.dispatchEvent(new CustomEvent('position-changed'));

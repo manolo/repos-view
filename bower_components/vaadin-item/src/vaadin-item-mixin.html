@@ -5,6 +5,9 @@ This program is available under Apache License Version 2.0, available at https:/
 -->
 
 <script>
+  /**
+   * @namespace Vaadin
+   */
   window.Vaadin = window.Vaadin || {};
 
   /**
@@ -12,6 +15,7 @@ This program is available under Apache License Version 2.0, available at https:/
    *
    * `focused`, `active` and `focus-ring` are set as only as attributes.
    * @polymerMixin
+   * @memberof Vaadin
    */
   Vaadin.ItemMixin = superClass => class VaadinItemMixin extends superClass {
     static get properties() {
@@ -21,6 +25,7 @@ This program is available under Apache License Version 2.0, available at https:/
          * Used for mixin detection because `instanceof` does not work with mixins.
          * e.g. in VaadinListMixin it filters items by using the
          * `element._hasVaadinItemMixin` condition.
+         * @type {boolean}
          */
         _hasVaadinItemMixin: {
           value: true
@@ -28,6 +33,7 @@ This program is available under Apache License Version 2.0, available at https:/
 
         /**
          * If true, the user cannot interact with this element.
+         * @type {boolean}
          */
         disabled: {
           type: Boolean,
@@ -38,6 +44,7 @@ This program is available under Apache License Version 2.0, available at https:/
 
         /**
          * If true, the item is in selected state.
+         * @type {boolean}
          */
         selected: {
           type: Boolean,
@@ -46,28 +53,26 @@ This program is available under Apache License Version 2.0, available at https:/
           observer: '_selectedChanged'
         },
 
+        /** @private */
         _value: String
       };
     }
 
-    constructor() {
-      super();
-
-      /**
-       * Submittable string value. The default value is the trimmed text content of the element.
-       * @type {string}
-       */
-      this.value;
-    }
-
+    /**
+     * @return {string}
+     */
     get value() {
       return this._value !== undefined ? this._value : this.textContent.trim();
     }
 
+    /**
+     * @param {string} value
+     */
     set value(value) {
       this._value = value;
     }
 
+    /** @protected */
     ready() {
       super.ready();
 
@@ -90,24 +95,24 @@ This program is available under Apache License Version 2.0, available at https:/
       this.addEventListener('keyup', e => this._onKeyup(e));
     }
 
-    /**
-     * @protected
-     */
+    /** @protected */
     disconnectedCallback() {
       super.disconnectedCallback();
 
       // in Firefox and Safari, blur does not fire on the element when it is removed,
       // especially between keydown and keyup events, being active at the same time.
-      // reproducible in `<vaadin-dropdown-menu>` when closing overlay on select.
+      // reproducible in `<vaadin-select>` when closing overlay on select.
       if (this.hasAttribute('active')) {
         this._setFocused(false);
       }
     }
 
+    /** @private */
     _selectedChanged(selected) {
       this.setAttribute('aria-selected', selected);
     }
 
+    /** @private */
     _disabledChanged(disabled) {
       if (disabled) {
         this.selected = false;
@@ -118,6 +123,10 @@ This program is available under Apache License Version 2.0, available at https:/
       }
     }
 
+    /**
+     * @param {boolean} focused
+     * @protected
+     */
     _setFocused(focused) {
       if (focused) {
         this.setAttribute('focused', '');
@@ -131,6 +140,10 @@ This program is available under Apache License Version 2.0, available at https:/
       }
     }
 
+    /**
+     * @param {boolean} active
+     * @protected
+     */
     _setActive(active) {
       if (active) {
         this.setAttribute('active', '');
@@ -139,13 +152,21 @@ This program is available under Apache License Version 2.0, available at https:/
       }
     }
 
+    /**
+     * @param {!KeyboardEvent} event
+     * @protected
+     */
     _onKeydown(event) {
-      if (/^( |SpaceBar|Enter)$/.test(event.key)) {
+      if (/^( |SpaceBar|Enter)$/.test(event.key) && !event.defaultPrevented) {
         event.preventDefault();
         this._setActive(true);
       }
     }
 
+    /**
+     * @param {!KeyboardEvent} event
+     * @protected
+     */
     _onKeyup(event) {
       if (this.hasAttribute('active')) {
         this._setActive(false);

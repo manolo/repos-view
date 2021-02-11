@@ -4,7 +4,9 @@ Copyright (c) 2017 Vaadin Ltd.
 This program is available under Apache License Version 2.0, available at https://vaadin.com/license/
 -->
 
-<link rel="import" href="../../polymer/polymer.html">
+<link rel="import" href="../../polymer/lib/utils/render-status.html">
+<link rel="import" href="../../polymer/lib/utils/async.html">
+<link rel="import" href="../../polymer/lib/utils/flush.html">
 <link rel="import" href="iron-list.html">
 
 <script>
@@ -13,8 +15,10 @@ This program is available under Apache License Version 2.0, available at https:/
      * This Element is used internally by vaadin-grid.
      *
      * @private
+     * @implements Vaadin.Grid.PolymerIronList
+     * @extends HTMLElement
      */
-    class GridScrollerElement extends window.PolymerIronList {
+    class GridScrollerElement extends Vaadin.Grid.PolymerIronList {
 
       static get is() {
         return 'vaadin-grid-scroller';
@@ -22,8 +26,15 @@ This program is available under Apache License Version 2.0, available at https:/
 
       static get properties() {
         return {
-          size: Number,
+          size: {
+            type: Number,
+            notify: true
+          },
 
+          /**
+           * @type {number}
+           * @protected
+           */
           _vidxOffset: {
             value: 0
           }
@@ -36,40 +47,37 @@ This program is available under Apache License Version 2.0, available at https:/
         ];
       }
 
+      /** @protected */
+      connectedCallback() {
+        super.connectedCallback();
+        this._scrollHandler();
+      }
+
       /**
-      * @protected
-      */
+       * @param {!HTMLTableRowElement} item
+       * @param {number} index
+       * @protected
+       */
       _updateScrollerItem(item, index) {}
-      /**
-      * @protected
-      */
+
+      /** @protected */
       _afterScroll() {}
-      /**
-      * @protected
-      */
+
+      /** @protected */
       _getRowTarget() {}
-      /**
-      * @protected
-      */
+
+      /** @protected */
       _createScrollerRows() {}
-      /**
-      * @protected
-      */
+
+      /** @protected */
       _canPopulate() {}
 
       /**
-      * @private
-      */
+       * @param {number} index
+       * @protected
+       */
       scrollToIndex(index) {
         this._warnPrivateAPIAccess('scrollToIndex');
-
-        if (index > 0) {
-          this._pendingScrollToIndex = null;
-        }
-        if (!parseInt(this.$.items.style.borderTopWidth) && index > 0) {
-          // Schedule another scroll to be invoked once init is complete
-          this._pendingScrollToIndex = index;
-        }
 
         this._scrollingToIndex = true;
         index = Math.min(Math.max(index, 0), this._effectiveSize - 1);
@@ -96,6 +104,7 @@ This program is available under Apache License Version 2.0, available at https:/
         this._scrollingToIndex = false;
       }
 
+      /** @private */
       _effectiveSizeChanged(size) {
         let fvi; // first visible (adjusted) index
         let fviOffset = 0;
@@ -136,8 +145,22 @@ This program is available under Apache License Version 2.0, available at https:/
           });
         }
         this._assignModels();
+        requestAnimationFrame(() => this._update());
+
+        this.__updateFooterPositioning();
+
+        if (this._ie) {
+          // Workaround an IE flexbox bug where the rows would horizontally collapse
+          // whenever item count change toggles the scrollbar visibility (is tested)
+          this.$.table.style.display = 'block';
+          setTimeout(() => {
+            this.$.table.style.display = 'flex';
+            this._translateStationaryElements();
+          });
+        }
       }
 
+      /** @protected */
       _positionItems() {
         this._adjustScrollPosition();
 
@@ -158,23 +181,58 @@ This program is available under Apache License Version 2.0, available at https:/
         }
       }
 
+      /**
+       * @param {number} count
+       * @protected
+       */
       _increasePoolIfNeeded(count) {
-        if ((count === 0 && this._scrollingToIndex) || !this._canPopulate()) {
+        if ((count === 0 && this._scrollingToIndex) || !this._canPopulate() || !this._effectiveSize) {
           return;
         }
 
-        if (this._physicalCount === 0) {
-          this._updateMetrics();
+        if (!this._initialPoolCreated) {
+          this._initialPoolCreated = true;
           super._increasePoolIfNeeded(25);
-        } else {
-          const viewportCovered = this._physicalCount * this._physicalAverage >= this._viewportHeight * 3;
-          // Don't increase the pool if there's enough rows. This is to avoid an eternal loop.
-          if (!viewportCovered) {
-            this._accessIronListAPI(() => super._increasePoolIfNeeded(count));
-          }
+        } else if (this._optPhysicalSize !== Infinity) {
+          this._debounceIncreasePool = Polymer.Debouncer.debounce(
+            this._debounceIncreasePool,
+            Polymer.Async.animationFrame,
+            () => {
+              this._updateMetrics();
+              const remainingPhysicalSize = this._optPhysicalSize - this._physicalSize;
+              let estimatedMissingRowCount = Math.ceil(remainingPhysicalSize / this._physicalAverage);
+
+              if (this._physicalCount + estimatedMissingRowCount > this._effectiveSize) {
+                // Do not increase the physical item count above the this._effectiveSize
+                estimatedMissingRowCount = Math.max(0, this._effectiveSize - this._physicalCount);
+              }
+
+              if (this._physicalSize && estimatedMissingRowCount > 0 && this._optPhysicalSize !== Infinity) {
+                super._increasePoolIfNeeded(estimatedMissingRowCount);
+                // Ensure the rows are in order after increasing pool
+                this.__reorderChildNodes();
+              }
+            });
         }
       }
 
+      /** @private */
+      __reorderChildNodes() {
+        const childNodes = Array.from(this.$.items.childNodes);
+        const rowsInOrder = !!childNodes.reduce((inOrder, current, currentIndex, array) => {
+          if (currentIndex === 0 || array[currentIndex - 1].index === current.index - 1) {
+            return inOrder;
+          }
+        }, true);
+
+        if (!rowsInOrder) {
+          childNodes.sort((row1, row2) => {
+            return row1.index - row2.index;
+          }).forEach(row => this.$.items.appendChild(row));
+        }
+      }
+
+      /** @private */
       _createPool(size) {
         const fragment = document.createDocumentFragment();
         const physicalItems = this._createScrollerRows(size);
@@ -190,8 +248,6 @@ This program is available under Apache License Version 2.0, available at https:/
           content.setAttribute('slot', slot);
         }
 
-        this._updateHeaderFooterMetrics();
-
         Polymer.RenderStatus.afterNextRender(this, () => this.notifyResize());
         return physicalItems;
       }
@@ -199,6 +255,7 @@ This program is available under Apache License Version 2.0, available at https:/
       /**
        * Assigns the data models to a given set of items.
        * @param {!Array<number>=} itemSet
+       * @protected
        */
       _assignModels(itemSet) {
         this._iterateItems((pidx, vidx) => {
@@ -208,12 +265,15 @@ This program is available under Apache License Version 2.0, available at https:/
         }, itemSet);
       }
 
+      /** @protected */
       _scrollHandler() {
         const delta = this.$.table.scrollTop - this._scrollPosition;
         this._accessIronListAPI(super._scrollHandler);
         const oldOffset = this._vidxOffset;
         if (this._accessIronListAPI(() => this._maxScrollTop) && this._virtualCount < this._effectiveSize) {
           this._adjustVirtualIndexOffset(delta);
+        } else {
+          this._vidxOffset = 0;
         }
         if (this._vidxOffset !== oldOffset) {
           this._update();
@@ -221,6 +281,7 @@ This program is available under Apache License Version 2.0, available at https:/
         this._afterScroll();
       }
 
+      /** @private */
       _adjustVirtualIndexOffset(delta) {
         if (Math.abs(delta) > 10000) {
           if (this._noScale) {
@@ -265,79 +326,120 @@ This program is available under Apache License Version 2.0, available at https:/
         }
       }
 
+      /** @private */
       _accessIronListAPI(cb) {
         this._warnPrivateAPIAccessAsyncEnabled = false;
+        const returnValue = cb.apply(this);
         this._debouncerWarnPrivateAPIAccess = Polymer.Debouncer.debounce(
           this._debouncerWarnPrivateAPIAccess,
           Polymer.Async.animationFrame,
           () => this._warnPrivateAPIAccessAsyncEnabled = true
         );
-        return cb.apply(this);
+        return returnValue;
       }
 
-      /* Allow iron-list to access its APIs from debounced callbacks without warns */
+      /**
+       * Allow iron-list to access its APIs from debounced callbacks without warns
+       * @private
+       */
       _debounceRender(cb, asyncModule) {
         super._debounceRender(() => this._accessIronListAPI(cb), asyncModule);
       }
 
-      /* Warn when iron-list APIs are being accessed directly */
+      /**
+       * Warn when iron-list APIs are being accessed directly
+       * @private
+       */
       _warnPrivateAPIAccess(apiName) {
         if (this._warnPrivateAPIAccessAsyncEnabled) {
           console.warn(`Accessing private API (${apiName})!`);
         }
       }
 
+      /** @protected */
       _render() {
         this._accessIronListAPI(super._render);
       }
 
+      /** @private */
       _createFocusBackfillItem() { /* Ignore */ }
+
+      /** @private */
       _multiSelectionChanged() { /* Ignore */ }
+
+      /** @private */
       clearSelection() { /* Ignore */ }
+
+      /** @protected */
       _itemsChanged() { /* Ignore */ }
+
+      /** @private */
       _manageFocus() { /* Ignore */ }
+
+      /** @private */
       _removeFocusedItem() { /* Ignore */ }
 
+      /**
+       * @return {number}
+       * @protected
+       */
       get _firstVisibleIndex() {
         return this._accessIronListAPI(() => super.firstVisibleIndex);
       }
+
+      /**
+       * @return {number}
+       * @protected
+       */
       get _lastVisibleIndex() {
         return this._accessIronListAPI(() => super.lastVisibleIndex);
       }
+
+      /**
+       * @param {number} index
+       * @protected
+       */
       _scrollToIndex(index) {
         this._accessIronListAPI(() => this.scrollToIndex(index));
       }
+
+      /** @private */
       get firstVisibleIndex() {
         this._warnPrivateAPIAccess('firstVisibleIndex'); return super.firstVisibleIndex;
       }
+
+      /** @private */
       set firstVisibleIndex(value) {
         this._warnPrivateAPIAccess('firstVisibleIndex'); super.firstVisibleIndex = value;
       }
+
+      /** @private */
       get lastVisibleIndex() {
         this._warnPrivateAPIAccess('lastVisibleIndex'); return super.lastVisibleIndex;
       }
+
+      /** @private */
       set lastVisibleIndex(value) {
         this._warnPrivateAPIAccess('lastVisibleIndex'); super.lastVisibleIndex = value;
       }
-      get maxPhysicalCount() {
-        this._warnPrivateAPIAccess('maxPhysicalCount'); return super.maxPhysicalCount;
-      }
-      set maxPhysicalCount(value) {
-        this._warnPrivateAPIAccess('maxPhysicalCount'); super.maxPhysicalCount = value;
-      }
-      get scrollOffset() {
-        this._warnPrivateAPIAccess('scrollOffset'); return super.scrollOffset;
-      }
-      set scrollOffset(value) {
-        this._warnPrivateAPIAccess('scrollOffset'); super.scrollOffset = value;
-      }
+
+      /** @private */
       updateViewportBoundaries() {
         this._warnPrivateAPIAccess('updateViewportBoundaries'); super.updateViewportBoundaries.apply(this, arguments);
+      }
+
+      /** @protected */
+      _resizeHandler() {
+        super._resizeHandler();
+        Polymer.flush();
       }
     }
 
     customElements.define(GridScrollerElement.is, GridScrollerElement);
 
+    /**
+     * @namespace Vaadin.Grid
+     */
     window.Vaadin = window.Vaadin || {};
     window.Vaadin.Grid = window.Vaadin.Grid || {};
     Vaadin.Grid.ScrollerElement = GridScrollerElement;

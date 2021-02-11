@@ -7,6 +7,7 @@ This program is available under Apache License Version 2.0, available at https:/
 <link rel="import" href="../../polymer/polymer.html">
 <link rel="import" href="../../polymer/lib/elements/custom-style.html">
 <link rel="import" href="../../vaadin-themable-mixin/vaadin-themable-mixin.html">
+<link rel="import" href="../../vaadin-element-mixin/vaadin-dir-mixin.html">
 
 <custom-style>
   <style>
@@ -25,11 +26,17 @@ This program is available under Apache License Version 2.0, available at https:/
       :host {
         display: inline-flex;
         cursor: pointer;
+        max-width: 100%;
+      }
+
+      [part="content"] {
+        flex: 1 1 auto;
       }
 
       [part="indicators"] {
         position: relative;
         align-self: center;
+        flex: none;
       }
 
       [part="order"] {
@@ -39,6 +46,7 @@ This program is available under Apache License Version 2.0, available at https:/
 
       [part="indicators"]::before {
         font-family: 'vaadin-grid-sorter-icons';
+        display: inline-block;
       }
 
       :host(:not([direction])) [part="indicators"]::before {
@@ -72,7 +80,7 @@ This program is available under Apache License Version 2.0, available at https:/
        * ```html
        * <vaadin-grid-column>
        *   <template class="header">
-       *     <vaadin-grid-sorter path="name.first">First Name</vaadin-grid-sorter>
+       *     <vaadin-grid-sorter path="name.first">First name</vaadin-grid-sorter>
        *   </template>
        *   <template>[[item.name.first]]</template>
        * </vaadin-grid-column>
@@ -96,7 +104,7 @@ This program is available under Apache License Version 2.0, available at https:/
        *
        * @memberof Vaadin
        */
-      class GridSorterElement extends Vaadin.ThemableMixin(Polymer.Element) {
+      class GridSorterElement extends Vaadin.ThemableMixin(Vaadin.DirMixin(Polymer.Element)) {
         static get is() {
           return 'vaadin-grid-sorter';
         }
@@ -112,6 +120,7 @@ This program is available under Apache License Version 2.0, available at https:/
              * How to sort the data.
              * Possible values are `asc` to use an ascending algorithm, `desc` to sort the data in
              * descending direction, or `null` for not sorting the data.
+             * @type {GridSorterDirection | undefined}
              */
             direction: {
               type: String,
@@ -120,11 +129,16 @@ This program is available under Apache License Version 2.0, available at https:/
               value: null
             },
 
+            /**
+             * @type {number | null}
+             * @protected
+             */
             _order: {
               type: Number,
               value: null
             },
 
+            /** @private */
             _isConnected: {
               type: Boolean,
               value: false
@@ -139,6 +153,7 @@ This program is available under Apache License Version 2.0, available at https:/
           ];
         }
 
+        /** @protected */
         ready() {
           super.ready();
           this.addEventListener('click', this._onClick.bind(this));
@@ -156,6 +171,7 @@ This program is available under Apache License Version 2.0, available at https:/
           this._isConnected = false;
         }
 
+        /** @private */
         _pathOrDirectionChanged(path, direction, isConnected) {
           if (path === undefined || direction === undefined || isConnected === undefined) {
             return;
@@ -166,10 +182,12 @@ This program is available under Apache License Version 2.0, available at https:/
           }
         }
 
+        /** @private */
         _getDisplayOrder(order) {
           return order === null ? '' : order + 1;
         }
 
+        /** @private */
         _onClick(e) {
           const activeElement = this.getRootNode().activeElement;
           if (this !== activeElement && this.contains(activeElement)) {
@@ -187,6 +205,7 @@ This program is available under Apache License Version 2.0, available at https:/
           }
         }
 
+        /** @private */
         _directionOrOrderChanged(direction, order) {
           if (direction === undefined || order === undefined) {
             return;

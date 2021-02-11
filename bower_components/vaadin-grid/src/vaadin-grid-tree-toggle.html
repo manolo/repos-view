@@ -8,6 +8,7 @@ This program is available under Apache License Version 2.0, available at https:/
 <link rel="import" href="../../polymer/lib/elements/custom-style.html">
 <link rel="import" href="../../polymer/lib/utils/debounce.html">
 <link rel="import" href="../../vaadin-themable-mixin/vaadin-themable-mixin.html">
+<link rel="import" href="../../vaadin-element-mixin/vaadin-dir-mixin.html">
 
 <custom-style>
   <style>
@@ -129,7 +130,7 @@ This program is available under Apache License Version 2.0, available at https:/
      * @memberof Vaadin
      * @mixes Vaadin.ThemableMixin
      */
-    class GridTreeToggleElement extends Vaadin.ThemableMixin(Polymer.Element) {
+    class GridTreeToggleElement extends Vaadin.ThemableMixin(Vaadin.DirMixin(Polymer.Element)) {
       static get is() {
         return 'vaadin-grid-tree-toggle';
       }
@@ -139,6 +140,7 @@ This program is available under Apache License Version 2.0, available at https:/
           /**
            * Current level of the tree represented with a horizontal offset
            * of the toggle button.
+           * @type {number}
            */
           level: {
             type: Number,
@@ -148,6 +150,7 @@ This program is available under Apache License Version 2.0, available at https:/
 
           /**
            * Hides the toggle icon and disables toggling a tree sublevel.
+           * @type {boolean}
            */
           leaf: {
             type: Boolean,
@@ -157,6 +160,7 @@ This program is available under Apache License Version 2.0, available at https:/
 
           /**
            * Sublevel toggle state.
+           * @type {boolean}
            */
           expanded: {
             type: Boolean,
@@ -167,14 +171,19 @@ This program is available under Apache License Version 2.0, available at https:/
         };
       }
 
+      /** @protected */
       ready() {
         super.ready();
 
         this.addEventListener('click', e => this._onClick(e));
       }
 
+      /** @private */
       _onClick(e) {
         if (this.leaf) {
+          return;
+        }
+        if (Vaadin.Grid.isFocusable(e.target)) {
           return;
         }
 
@@ -182,6 +191,7 @@ This program is available under Apache License Version 2.0, available at https:/
         this.expanded = !this.expanded;
       }
 
+      /** @private */
       _levelChanged(level) {
         const value = Number(level).toString();
         this.style['---level'] = value;

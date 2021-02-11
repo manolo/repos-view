@@ -6,6 +6,8 @@ This program is available under Apache License Version 2.0, available at https:/
 
 <link rel="import" href="../../polymer/polymer-element.html">
 <link rel="import" href="vaadin-text-field-mixin.html">
+<link rel="import" href="../../vaadin-control-state-mixin/vaadin-control-state-mixin.html">
+<link rel="import" href="../../vaadin-themable-mixin/vaadin-themable-mixin.html">
 <link rel="import" href="../../vaadin-element-mixin/vaadin-element-mixin.html">
 
 <dom-module id="vaadin-text-area">
@@ -17,8 +19,9 @@ This program is available under Apache License Version 2.0, available at https:/
         min-height: inherit; /* MSIE 11 */
       }
 
-      /* The label and the error message should neither grow nor shrink. */
+      /* The label, helper text and the error message should neither grow nor shrink. */
       [part="label"],
+      [part="helper-text"],
       [part="error-message"] {
         flex: none;
       }
@@ -36,39 +39,37 @@ This program is available under Apache License Version 2.0, available at https:/
       [part="input-field"] ::slotted(*) {
         align-self: flex-start;
       }
+
+      @keyframes vaadin-text-area-appear {
+        to {
+          opacity: 1;
+        }
+      }
+
+      :host {
+        animation: 1ms vaadin-text-area-appear;
+      }
     </style>
 
     <div class="vaadin-text-area-container">
 
       <label part="label" on-click="focus" id="[[_labelId]]">[[label]]</label>
 
-      <div part="input-field">
+      <div part="input-field" id="[[_inputId]]">
 
         <slot name="prefix"></slot>
 
-        <textarea part="value"
-            autocomplete$="[[autocomplete]]"
-            autocorrect$="[[autocorrect]]"
-            autocapitalize$="[[autocapitalize]]"
-            autofocus$="[[autofocus]]"
-            disabled$="[[disabled]]"
-            maxlength$="[[maxlength]]"
-            minlength$="[[minlength]]"
-            placeholder$="[[placeholder]]"
-            readonly$="[[readonly]]"
-            aria-readonly$="[[readonly]]"
-            required$="[[required]]"
-            aria-required$="[[required]]"
-            value="{{value::input}}"
-            on-blur="validate"
-            on-input="_onInput"
-            on-change="_onChange"
-            aria-describedby$="[[_getActiveErrorId(invalid, errorMessage, _errorId)]]"
-            aria-labelledby$="[[_getActiveLabelId(label, _labelId)]]"
-            aria-invalid$="[[invalid]]"></textarea>
+        <slot name="textarea">
+          <textarea part="value"></textarea>
+        </slot>
 
+        <div part="clear-button" id="clearButton" role="button" aria-label$="[[i18n.clear]]"></div>
         <slot name="suffix"></slot>
 
+      </div>
+
+      <div part="helper-text" on-click="focus" id="[[_helperTextId]]">
+        <slot name="helper">[[helperText]]</slot>
       </div>
 
       <div part="error-message"
@@ -84,10 +85,24 @@ This program is available under Apache License Version 2.0, available at https:/
   <script>
     (function() {
       /**
-       * `<vaadin-text-area>` is a Polymer 2 element for text area control in forms.
+       * `<vaadin-text-area>` is a Web Component for text area control in forms.
        *
        * ```html
        * <vaadin-text-area label="Add description">
+       * </vaadin-text-area>
+       * ```
+       *
+       * ### Prefixes and suffixes
+       *
+       * These are child elements of a `<vaadin-text-area>` that are displayed
+       * inline with the input, before or after.
+       * In order for an element to be considered as a prefix, it must have the slot
+       * attribute set to `prefix` (and similarly for `suffix`).
+       *
+       * ```html
+       * <vaadin-text-area label="Add description">
+       *   <div slot="prefix">Details:</div>
+       *   <div slot="suffix">The end!</div>
        * </vaadin-text-area>
        * ```
        *
@@ -109,6 +124,8 @@ This program is available under Apache License Version 2.0, available at https:/
        * `disabled` | Set to a disabled text field | :host
        * `has-value` | Set when the element has a value | :host
        * `has-label` | Set when the element has a label | :host
+       * `has-helper` | Set when the element has helper text | :host
+       * `has-error-message` | Set when the element has an error message | :host
        * `invalid` | Set when the element is invalid | :host
        * `focused` | Set when the element is focused | :host
        * `focus-ring` | Set when the element is keyboard focused | :host
@@ -118,16 +135,22 @@ This program is available under Apache License Version 2.0, available at https:/
        *
        * @memberof Vaadin
        * @mixes Vaadin.TextFieldMixin
+       * @mixes Vaadin.ControlStateMixin
+       * @mixes Vaadin.ElementMixin
        * @mixes Vaadin.ThemableMixin
        * @demo demo/index.html
        */
-      class TextAreaElement extends Vaadin.ElementMixin(Vaadin.TextFieldMixin(Vaadin.ThemableMixin(Polymer.Element))) {
+      class TextAreaElement extends
+        Vaadin.ElementMixin(
+          Vaadin.TextFieldMixin(
+            Vaadin.ControlStateMixin(
+              Vaadin.ThemableMixin(Polymer.Element)))) {
         static get is() {
           return 'vaadin-text-area';
         }
 
         static get version() {
-          return '2.0.0-beta2';
+          return '2.8.3';
         }
 
         static get observers() {
@@ -136,19 +159,39 @@ This program is available under Apache License Version 2.0, available at https:/
           ];
         }
 
+        /** @protected */
         ready() {
           super.ready();
           this._updateHeight();
+          this.addEventListener('animationend', this._onAnimationEnd);
+          this.__safari = /^((?!chrome|android).)*safari/i.test(navigator.userAgent);
         }
 
+        /** @private */
+        _onAnimationEnd(e) {
+          if (e.animationName.indexOf('vaadin-text-area-appear') === 0) {
+            this._updateHeight();
+          }
+        }
+
+        /**
+         * @return {string}
+         * @protected
+         */
+        get _slottedTagName() {
+          return 'textarea';
+        }
+
+        /** @private */
         _textAreaValueChanged(value) {
           this._updateHeight();
         }
 
+        /** @private */
         _updateHeight() {
           const inputField = this.root.querySelector('[part=input-field]');
           const scrollTop = inputField.scrollTop;
-          const input = this.focusElement;
+          const input = this.inputElement;
 
           const inputWidth = getComputedStyle(input).width;
 
@@ -159,7 +202,9 @@ This program is available under Apache License Version 2.0, available at https:/
             input.style.maxWidth = inputWidth;
             input.style.height = 'auto';
             // Avoid a jumpy Safari rendering issue
-            inputField.style.display = 'block';
+            if (this.__safari) {
+              inputField.style.display = 'block';
+            }
           }
           this._oldValueLength = valueLength;
 
@@ -172,7 +217,15 @@ This program is available under Apache License Version 2.0, available at https:/
           input.style.removeProperty('max-width');
           inputField.style.removeProperty('display');
           inputField.scrollTop = scrollTop;
+
+          this._dispatchIronResizeEventIfNeeded('InputHeight', inputHeight);
         }
+
+        /**
+         * Fired when the text-area height changes.
+         *
+         * @event iron-resize
+         */
       }
 
       customElements.define(TextAreaElement.is, TextAreaElement);

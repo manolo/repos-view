@@ -6,6 +6,7 @@ This program is available under Apache License Version 2.0, available at https:/
 
 <link rel="import" href="../../polymer/polymer-element.html">
 <link rel="import" href="../../vaadin-themable-mixin/vaadin-themable-mixin.html">
+<link rel="import" href="../../vaadin-element-mixin/vaadin-dir-mixin.html">
 <link rel="import" href="vaadin-item-mixin.html">
 
 <dom-module id="vaadin-item">
@@ -26,13 +27,21 @@ This program is available under Apache License Version 2.0, available at https:/
   <script>
     (function() {
       /**
-       * `<vaadin-item>` is a Polymer 2 element providing layout for items in tabs and menus.
+       * `<vaadin-item>` is a Web Component providing layout for items in tabs and menus.
        *
        * ```
        *   <vaadin-item>
        *     Item content
        *   </vaadin-item>
        * ```
+       *
+       * ### Selectable
+       *
+       * `<vaadin-item>` has the `selected` property and the corresponding state attribute.
+       * Currently, the component sets the `selected` to false, when `disabled` property is set to true.
+       * But other than that, the `<vaadin-item>` does not switch selection by itself.
+       * In general, it is the wrapper component, like `<vaadin-list-box>`, which should update
+       * the `selected` property on the items, e. g. on mousedown or when Enter / Spacebar is pressed.
        *
        * ### Styling
        *
@@ -55,14 +64,25 @@ This program is available under Apache License Version 2.0, available at https:/
        * @memberof Vaadin
        * @mixes Vaadin.ItemMixin
        * @mixes Vaadin.ThemableMixin
+       * @mixes Vaadin.DirMixin
        */
-      class ItemElement extends Vaadin.ItemMixin(Vaadin.ThemableMixin(Polymer.Element)) {
+      class ItemElement extends Vaadin.ItemMixin(Vaadin.ThemableMixin(Vaadin.DirMixin(Polymer.Element))) {
         static get is() {
           return 'vaadin-item';
         }
 
         static get version() {
-          return '2.0.0-beta2';
+          return '2.3.0';
+        }
+
+        constructor() {
+          super();
+
+          /**
+           * Submittable string value. The default value is the trimmed text content of the element.
+           * @type {string}
+           */
+          this.value;
         }
       }
 

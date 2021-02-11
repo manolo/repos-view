@@ -12,6 +12,7 @@ This program is available under Apache License Version 2.0, available at https:/
     <style>
       :host {
         display: inline-flex;
+        max-width: 100%;
       }
 
       #filter {
@@ -50,7 +51,6 @@ This program is available under Apache License Version 2.0, available at https:/
 
         static get properties() {
           return {
-
             /**
              * JS Path of the property in the item used for filtering the data.
              */
@@ -64,12 +64,14 @@ This program is available under Apache License Version 2.0, available at https:/
               notify: true
             },
 
+            /** @private */
             _connected: Boolean
           };
         }
 
         /** @protected */
         connectedCallback() {
+          super.connectedCallback();
           this._connected = true;
         }
 
@@ -77,20 +79,26 @@ This program is available under Apache License Version 2.0, available at https:/
           return ['_filterChanged(path, value, _connected)'];
         }
 
+        /** @protected */
         ready() {
           super.ready();
 
-          const child = Polymer.dom(this).firstElementChild;
+          const child = this.firstElementChild;
           if (child && child.getAttribute('slot') !== 'filter') {
             console.warn('Make sure you have assigned slot="filter" to the child elements of <vaadin-grid-filter>');
             child.setAttribute('slot', 'filter');
           }
         }
 
+        /** @private */
         _filterChanged(path, value, connected) {
           if (path === undefined || value === undefined || !connected) {
             return;
           }
+          if (this._previousValue === undefined && value === '') {
+            return;
+          }
+          this._previousValue = value;
 
           this._debouncerFilterChanged = Polymer.Debouncer.debounce(
             this._debouncerFilterChanged,

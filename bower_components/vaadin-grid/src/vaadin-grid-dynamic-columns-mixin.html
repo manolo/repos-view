@@ -3,6 +3,7 @@
 Copyright (c) 2017 Vaadin Ltd.
 This program is available under Apache License Version 2.0, available at https://vaadin.com/license/
 -->
+<link rel="import" href="../../polymer/lib/utils/flattened-nodes-observer.html">
 
 <script>
   window.Vaadin = window.Vaadin || {};
@@ -13,11 +14,13 @@ This program is available under Apache License Version 2.0, available at https:/
    */
   Vaadin.Grid.DynamicColumnsMixin = superClass => class DynamicColumnsMixin extends superClass {
 
+    /** @protected */
     ready() {
       super.ready();
       this._addNodeObserver();
     }
 
+    /** @private */
     _hasColumnGroups(columns) {
       for (let i = 0; i < columns.length; i++) {
         if (columns[i].localName === 'vaadin-grid-column-group') {
@@ -28,10 +31,16 @@ This program is available under Apache License Version 2.0, available at https:/
       return false;
     }
 
+    /**
+     * @param {!GridColumnGroupElement} el
+     * @return {!Array<!GridColumnElement>}
+     * @protected
+     */
     _getChildColumns(el) {
       return Polymer.FlattenedNodesObserver.getFlattenedNodes(el).filter(this._isColumnElement);
     }
 
+    /** @private */
     _flattenColumnGroups(columns) {
       return columns.map(col => {
         if (col.localName === 'vaadin-grid-column-group') {
@@ -44,8 +53,9 @@ This program is available under Apache License Version 2.0, available at https:/
       }, []);
     }
 
+    /** @private */
     _getColumnTree() {
-      var rootColumns = this.queryAllEffectiveChildren('*').filter(this._isColumnElement);
+      var rootColumns = Polymer.FlattenedNodesObserver.getFlattenedNodes(this).filter(this._isColumnElement);
       var _columnTree = [];
 
       for (var c = rootColumns; ;) {
@@ -59,6 +69,7 @@ This program is available under Apache License Version 2.0, available at https:/
       return _columnTree;
     }
 
+    /** @protected */
     _updateColumnTree() {
       var columnTree = this._getColumnTree();
       if (!this._arrayEquals(columnTree, this._columnTree)) {
@@ -66,26 +77,30 @@ This program is available under Apache License Version 2.0, available at https:/
       }
     }
 
+    /** @private */
     _addNodeObserver() {
       this._observer = new Polymer.FlattenedNodesObserver(this, info => {
-
-        if (info.addedNodes.filter(this._isColumnElement).length > 0 ||
-          info.removedNodes.filter(this._isColumnElement).length > 0) {
-          this._updateColumnTree();
-        }
 
         const rowDetailsTemplate = info.addedNodes.filter(n => n.localName === 'template' && n.classList.contains('row-details'))[0];
         if (rowDetailsTemplate && this._rowDetailsTemplate !== rowDetailsTemplate) {
           this._rowDetailsTemplate = rowDetailsTemplate;
         }
 
+        if (info.addedNodes.filter(this._isColumnElement).length > 0 ||
+          info.removedNodes.filter(this._isColumnElement).length > 0) {
+          this._updateColumnTree();
+        }
+
         this._debouncerCheckImports = Polymer.Debouncer.debounce(
           this._debouncerCheckImports,
           Polymer.Async.timeOut.after(2000),
           this._checkImports.bind(this));
+
+        this._ensureFirstPageLoaded();
       });
     }
 
+    /** @private */
     _arrayEquals(arr1, arr2) {
       if (!arr1 || !arr2 || arr1.length != arr2.length) {
         return false;
@@ -105,12 +120,15 @@ This program is available under Apache License Version 2.0, available at https:/
       return true;
     }
 
+    /** @protected */
     _checkImports() {
       [
         'vaadin-grid-column-group',
         'vaadin-grid-filter',
+        'vaadin-grid-filter-column',
         'vaadin-grid-tree-toggle',
         'vaadin-grid-selection-column',
+        'vaadin-grid-sort-column',
         'vaadin-grid-sorter'
       ].forEach(elementName => {
         var element = this.querySelector(elementName);
@@ -120,17 +138,30 @@ This program is available under Apache License Version 2.0, available at https:/
       });
     }
 
-    _updateLastColumn() {
-      Array.from(this.shadowRoot.querySelectorAll('tr')).forEach(row => {
-        Array.from(row.querySelectorAll('[part~="cell"]:not([part~="details-cell"])'))
-          .sort((a, b) => {
-            return a._column._order - b._column._order;
-          }).forEach((cell, cellIndex, children) => {
-            this._toggleAttribute('last-column', cellIndex === children.length - 1, cell);
-          });
-      });
+    /** @protected */
+    _updateFirstAndLastColumn() {
+      Array.from(this.shadowRoot.querySelectorAll('tr')).forEach(row => this._updateFirstAndLastColumnForRow(row));
     }
 
+    /**
+     * @param {!HTMLElement} row
+     * @protected
+     */
+    _updateFirstAndLastColumnForRow(row) {
+      Array.from(row.querySelectorAll('[part~="cell"]:not([part~="details-cell"])'))
+        .sort((a, b) => {
+          return a._column._order - b._column._order;
+        }).forEach((cell, cellIndex, children) => {
+          this._toggleAttribute('first-column', cellIndex === 0, cell);
+          this._toggleAttribute('last-column', cellIndex === children.length - 1, cell);
+        });
+    }
+
+    /**
+     * @param {!Node} node
+     * @return {boolean}
+     * @protected
+     */
     _isColumnElement(node) {
       return node.nodeType === Node.ELEMENT_NODE && /\bcolumn\b/.test(node.localName);
     }

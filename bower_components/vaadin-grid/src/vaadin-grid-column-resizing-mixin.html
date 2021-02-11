@@ -30,16 +30,17 @@ This program is available under Apache License Version 2.0, available at https:/
       scroller.addEventListener('mousedown', e => e.target.getAttribute('part') === 'resize-handle' && e.preventDefault());
     }
 
+    /** @private */
     _onHeaderTrack(e) {
       const handle = e.target;
       if (handle.getAttribute('part') === 'resize-handle') {
         const cell = handle.parentElement;
         let column = cell._column;
 
-        this.$.scroller.setAttribute('column-resizing', '');
+        this._toggleAttribute('column-resizing', true, this.$.scroller);
 
         // Get the target column to resize
-        if (column.localName === 'vaadin-grid-column-group') {
+        while (column.localName === 'vaadin-grid-column-group') {
           column = Array.prototype.slice.call(column._childColumns, 0)
             .sort(function(a, b) {
               return a._order - b._order;
@@ -56,7 +57,9 @@ This program is available under Apache License Version 2.0, available at https:/
           var style = window.getComputedStyle(targetCell);
           var minWidth = 10 + parseInt(style.paddingLeft) + parseInt(style.paddingRight) + parseInt(style.borderLeftWidth)
             + parseInt(style.borderRightWidth) + parseInt(style.marginLeft) + parseInt(style.marginRight);
-          column.width = Math.max(minWidth, targetCell.offsetWidth + e.detail.x - targetCell.getBoundingClientRect().right) + 'px';
+          const maxWidth = targetCell.offsetWidth + (this.__isRTL ? targetCell.getBoundingClientRect().left - e.detail.x :
+            e.detail.x - targetCell.getBoundingClientRect().right);
+          column.width = Math.max(minWidth, maxWidth) + 'px';
           column.flexGrow = 0;
         }
         // Fix width and flex-grow for all preceding columns
@@ -73,7 +76,10 @@ This program is available under Apache License Version 2.0, available at https:/
           });
 
         if (e.detail.state === 'end') {
-          this.$.scroller.removeAttribute('column-resizing');
+          this._toggleAttribute('column-resizing', false, this.$.scroller);
+          this.dispatchEvent(new CustomEvent('column-resize', {
+            detail: {resizedColumn: column}
+          }));
         }
 
         // Notify resize
@@ -81,5 +87,12 @@ This program is available under Apache License Version 2.0, available at https:/
       }
     }
 
+    /**
+    * Fired when a column in the grid is resized by the user.
+    *
+    * @event column-resize
+    * @param {Object} detail
+    * @param {Object} detail.resizedColumn the column that was resized
+    */
   };
 </script>

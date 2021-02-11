@@ -5,6 +5,7 @@ This program is available under Apache License Version 2.0, available at https:/
 -->
 <link rel="import" href="../../polymer/polymer-element.html">
 <link rel="import" href="../../vaadin-themable-mixin/vaadin-themable-mixin.html">
+<link rel="import" href="../../vaadin-element-mixin/vaadin-dir-mixin.html">
 
 <dom-module id="vaadin-combo-box-item">
   <template>
@@ -47,7 +48,7 @@ This program is available under Apache License Version 2.0, available at https:/
      * @mixes Vaadin.ThemableMixin
      * @private
      */
-    class ComboBoxItemElement extends Vaadin.ThemableMixin(Polymer.Element) {
+    class ComboBoxItemElement extends Vaadin.ThemableMixin(Vaadin.DirMixin(Polymer.Element)) {
       static get is() {
         return 'vaadin-combo-box-item';
       }
@@ -91,12 +92,23 @@ This program is available under Apache License Version 2.0, available at https:/
           /**
            * The template instance corresponding to the item
            */
-          _itemTemplateInstance: Object
+          _itemTemplateInstance: Object,
+
+          /**
+           * Custom function for rendering the content of the `<vaadin-combo-box-item>` propagated from the combo box element.
+           */
+          renderer: Function,
+
+          /**
+           * Saved instance of a custom renderer function.
+           */
+          _oldRenderer: Function
         };
       }
 
       static get observers() {
         return [
+          '_rendererOrItemChanged(renderer, index, item.*)',
           '_updateLabel(label, _itemTemplateInstance)',
           '_updateTemplateInstanceVariable("index", index, _itemTemplateInstance)',
           '_updateTemplateInstanceVariable("item", item, _itemTemplateInstance)',
@@ -107,24 +119,56 @@ This program is available under Apache License Version 2.0, available at https:/
 
       connectedCallback() {
         super.connectedCallback();
-
         if (!this._itemTemplateInstance) {
           // 2.0 has __dataHost. Might want to consider assigning combobox reference directly to item.
-          const overlay = this.getRootNode().host; // equivalent of `this.domHost` from legacy API
+          const overlay = this.getRootNode().host.getRootNode().host;
           const dropdown = overlay.__dataHost;
           const comboBoxOverlay = dropdown.getRootNode().host;
-          const comboBox = comboBoxOverlay.getRootNode().host;
-          comboBox._ensureTemplatized();
-          if (comboBox._TemplateClass) {
-            this._itemTemplateInstance = new comboBox._TemplateClass({});
+          this._comboBox = comboBoxOverlay.getRootNode().host;
+          this._comboBox._ensureTemplatized();
+          if (this._comboBox._TemplateClass) {
+            this._itemTemplateInstance = new this._comboBox._TemplateClass({});
             this.$.content.textContent = '';
             this.$.content.appendChild(this._itemTemplateInstance.root);
           }
         }
+
+        const hostDir = this._comboBox.getAttribute('dir');
+        if (hostDir) {
+          this.setAttribute('dir', hostDir);
+        }
+      }
+
+      _render() {
+        if (!this.renderer) {
+          return;
+        }
+
+        const model = {
+          index: this.index,
+          item: this.item
+        };
+
+        this.renderer(this.$.content, this._comboBox, model);
+      }
+
+      _rendererOrItemChanged(renderer, index, item) {
+        if (item === undefined || index === undefined) {
+          return;
+        }
+
+        if (this._oldRenderer !== renderer) {
+          this.$.content.innerHTML = '';
+        }
+
+        if (renderer) {
+          this._oldRenderer = renderer;
+          this._render();
+        }
       }
 
       _updateLabel(label, _itemTemplateInstance) {
-        if (_itemTemplateInstance === undefined && this.$.content) {
+        if (_itemTemplateInstance === undefined && this.$.content && !this.renderer) {
           // Only set label to textContent no template
           this.$.content.textContent = label;
         }

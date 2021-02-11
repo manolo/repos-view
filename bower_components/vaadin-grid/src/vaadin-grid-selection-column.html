@@ -12,12 +12,10 @@ This program is available under Apache License Version 2.0, available at https:/
   <template>
     <template class="header" id="defaultHeaderTemplate">
       <vaadin-checkbox class="vaadin-grid-select-all-checkbox" aria-label="Select All" hidden$="[[_selectAllHidden]]" on-checked-changed="_onSelectAllCheckedChanged"
-        checked="[[_isChecked(selectAll, _indeterminate)]]" indeterminate="[[_indeterminate]]">
-      </vaadin-checkbox>
+        checked="[[_isChecked(selectAll, _indeterminate)]]" indeterminate="[[_indeterminate]]"></vaadin-checkbox>
     </template>
     <template id="defaultBodyTemplate">
-      <vaadin-checkbox aria-label="Select Row" checked="{{selected}}">
-      </vaadin-checkbox>
+      <vaadin-checkbox aria-label="Select Row" checked="{{selected}}"></vaadin-checkbox>
     </template>
   </template>
 
@@ -43,7 +41,7 @@ This program is available under Apache License Version 2.0, available at https:/
      * the column header gets an additional checkbox that can be used for toggling
      * selection for all the items at once.
      *
-     * __The default content templates can also be overridden with custom ones.__
+     * __The default content can also be overridden__
      *
      * @memberof Vaadin
      * @extends Vaadin.GridColumnElement
@@ -61,11 +59,13 @@ This program is available under Apache License Version 2.0, available at https:/
            */
           width: {
             type: String,
-            value: '56px'
+            value: '58px'
           },
 
           /**
            * Flex grow ratio for the cell widths. When set to 0, cell width is fixed.
+           * @attr {number} flex-grow
+           * @type {number}
            */
           flexGrow: {
             type: Number,
@@ -74,6 +74,8 @@ This program is available under Apache License Version 2.0, available at https:/
 
           /**
            * When true, all the items are selected.
+           * @attr {boolean} select-all
+           * @type {boolean}
            */
           selectAll: {
             type: Boolean,
@@ -83,20 +85,25 @@ This program is available under Apache License Version 2.0, available at https:/
 
           /**
            * When true, the active gets automatically selected.
+           * @attr {boolean} auto-select
+           * @type {boolean}
            */
           autoSelect: {
             type: Boolean,
             value: false,
           },
 
+          /** @private */
           _indeterminate: Boolean,
 
           /**
            * The previous state of activeItem. When activeItem turns to `null`,
            * previousActiveItem will have an Object with just unselected activeItem
+           * @private
            */
           _previousActiveItem: Object,
 
+          /** @private */
           _selectAllHidden: Boolean
         };
       }
@@ -107,16 +114,41 @@ This program is available under Apache License Version 2.0, available at https:/
         ];
       }
 
+      /** @private */
+      _pathOrHeaderChanged(path, header, headerCell, footerCell, cells, renderer, headerRenderer, bodyTemplate, headerTemplate) {
+        // As a special case, allow overriding the default header / body templates
+        if (cells.value && (path !== undefined || renderer !== undefined)) {
+          this._bodyTemplate = bodyTemplate = undefined;
+          this.__cleanCellsOfTemplateProperties(cells.value);
+        }
+        if (headerCell && (header !== undefined || headerRenderer !== undefined)) {
+          this._headerTemplate = headerTemplate = undefined;
+          this.__cleanCellsOfTemplateProperties([headerCell]);
+        }
+        super._pathOrHeaderChanged(path, header, headerCell, footerCell, cells, renderer, headerRenderer, bodyTemplate, headerTemplate);
+      }
+
+      /** @private */
+      __cleanCellsOfTemplateProperties(cells) {
+        cells.forEach(cell => {
+          cell._content.innerHTML = '';
+          delete cell._instance;
+          delete cell._template;
+        });
+      }
+
+      /** @private */
       _prepareHeaderTemplate() {
-        const headerTemplate = this._prepareTemplatizer(this._findTemplate('template.header') || this.$.defaultHeaderTemplate);
+        const headerTemplate = this._prepareTemplatizer(this._findTemplate(true) || this.$.defaultHeaderTemplate);
         // needed to override the dataHost correctly in case internal template is used.
         headerTemplate.templatizer.dataHost = headerTemplate === this.$.defaultHeaderTemplate ? this : this.dataHost;
 
         return headerTemplate;
       }
 
+      /** @private */
       _prepareBodyTemplate() {
-        const template = this._prepareTemplatizer(this._findTemplate('template:not(.header):not(.footer)') || this.$.defaultBodyTemplate);
+        const template = this._prepareTemplatizer(this._findTemplate() || this.$.defaultBodyTemplate);
         // needed to override the dataHost correctly in case internal template is used.
         template.templatizer.dataHost = template === this.$.defaultBodyTemplate ? this : this.dataHost;
 
@@ -133,29 +165,26 @@ This program is available under Apache License Version 2.0, available at https:/
 
       /** @protected */
       disconnectedCallback() {
-        super.disconnectedCallback();
+        this._grid.removeEventListener('active-item-changed', this._boundOnActiveItemChanged);
+        this._grid.removeEventListener('data-provider-changed', this._boundOnDataProviderChanged);
+        this._grid.removeEventListener('filter-changed', this._boundOnSelectedItemsChanged);
+        this._grid.removeEventListener('selected-items-changed', this._boundOnSelectedItemsChanged);
 
-        if (this._grid) {
-          this._grid.removeEventListener('active-item-changed', this._boundOnActiveItemChanged);
-          this._grid.removeEventListener('data-provider-changed', this._boundOnDataProviderChanged);
-          this._grid.removeEventListener('filter-changed', this._boundOnSelectedItemsChanged);
-          this._grid.removeEventListener('selected-items-changed', this._boundOnSelectedItemsChanged);
-
-          const isSafari = /^((?!chrome|android).)*safari/i.test(navigator.userAgent);
-          if (isSafari && window.ShadyDOM && this.parentElement) {
-            // Detach might have beem caused by order change.
-            // Shady on safari doesn't restore isAttached so we'll need to do it manually.
-            const parent = this.parentElement;
-            const nextSibling = this.nextElementSibling;
-            parent.removeChild(this);
-            if (nextSibling) {
-              parent.insertBefore(this, nextSibling);
-            } else {
-              parent.appendChild(this);
-            }
+        const isSafari = /^((?!chrome|android).)*safari/i.test(navigator.userAgent);
+        if (isSafari && window.ShadyDOM && this.parentElement) {
+          // Detach might have beem caused by order change.
+          // Shady on safari doesn't restore isAttached so we'll need to do it manually.
+          const parent = this.parentElement;
+          const nextSibling = this.nextElementSibling;
+          parent.removeChild(this);
+          if (nextSibling) {
+            parent.insertBefore(this, nextSibling);
+          } else {
+            parent.appendChild(this);
           }
-
         }
+
+        super.disconnectedCallback();
       }
 
       /** @protected */
@@ -169,6 +198,7 @@ This program is available under Apache License Version 2.0, available at https:/
         }
       }
 
+      /** @private */
       _onSelectAllChanged(selectAll) {
         if (selectAll === undefined || !this._grid) {
           return;
@@ -181,22 +211,30 @@ This program is available under Apache License Version 2.0, available at https:/
         this._grid.selectedItems = selectAll && Array.isArray(this._grid.items) ? this._grid._filter(this._grid.items) : [];
       }
 
-      // Return true if array `a` contains all the items in `b`
-      // We need this when sorting or to preserve selection after filtering.
+      /**
+       * Return true if array `a` contains all the items in `b`
+       * We need this when sorting or to preserve selection after filtering.
+       * @private
+       */
       _arrayContains(a, b) {
         for (var i = 0; a && b && b[i] && a.indexOf(b[i]) >= 0; i++); // eslint-disable-line
         return i == b.length;
       }
 
+      /** @private */
       _onSelectAllCheckedChanged(e) {
         this.selectAll = this._indeterminate || e.target.checked;
       }
 
-      // iOS needs indeterminated + checked at the same time
+      /**
+       * iOS needs indeterminated + checked at the same time
+       * @private
+       */
       _isChecked(selectAll, indeterminate) {
         return indeterminate || selectAll;
       }
 
+      /** @private */
       _onActiveItemChanged(e) {
         const activeItem = e.detail.value;
         if (this.autoSelect) {
@@ -208,6 +246,7 @@ This program is available under Apache License Version 2.0, available at https:/
         this._previousActiveItem = activeItem;
       }
 
+      /** @private */
       _onSelectedItemsChanged(e) {
         this._selectAllChangeLock = true;
         if (Array.isArray(this._grid.items)) {
@@ -225,6 +264,7 @@ This program is available under Apache License Version 2.0, available at https:/
         this._selectAllChangeLock = false;
       }
 
+      /** @private */
       _onDataProviderChanged(e) {
         this._selectAllHidden = !Array.isArray(this._grid.items);
       }

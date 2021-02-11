@@ -5,9 +5,14 @@ This program is available under Apache License Version 2.0, available at https:/
 -->
 
 <script>
+  /**
+   * @namespace Vaadin
+   */
   window.Vaadin = window.Vaadin || {};
+
   /**
    * @polymerMixin
+   * @memberof Vaadin
    */
   Vaadin.ProgressMixin = superClass =>
     class VaadinProgressMixin extends superClass {
@@ -22,6 +27,7 @@ This program is available under Apache License Version 2.0, available at https:/
           },
           /**
            * Minimum bound of the progress bar.
+           * @type {number}
            */
           min: {
             type: Number,
@@ -30,6 +36,7 @@ This program is available under Apache License Version 2.0, available at https:/
           },
           /**
            * Maximum bound of the progress bar.
+           * @type {number}
            */
           max: {
             type: Number,
@@ -38,7 +45,8 @@ This program is available under Apache License Version 2.0, available at https:/
           },
           /**
            * Indeterminate state of the progress bar.
-           * This property takes precedence over other state properties (min, max, value). 
+           * This property takes precedence over other state properties (min, max, value).
+           * @type {boolean}
            */
           indeterminate: {
             type: Boolean,
@@ -54,12 +62,14 @@ This program is available under Apache License Version 2.0, available at https:/
         ];
       }
 
+      /** @protected */
       ready() {
         super.ready();
 
         this.setAttribute('role', 'progressbar');
       }
 
+      /** @private */
       _normalizedValueChanged(value, min, max) {
         const newNormalizedValue = this._normalizeValue(value, min, max);
 
@@ -70,20 +80,24 @@ This program is available under Apache License Version 2.0, available at https:/
         });
       }
 
+      /** @private */
       _valueChanged(newV, oldV) {
         this.setAttribute('aria-valuenow', newV);
       }
 
+      /** @private */
       _minChanged(newV, oldV) {
         this.setAttribute('aria-valuemin', newV);
       }
 
+      /** @private */
       _maxChanged(newV, oldV) {
         this.setAttribute('aria-valuemax', newV);
       }
 
       /**
        * Percent of current progress relative to whole progress bar (max - min)
+       * @private
        */
       _normalizeValue(value, min, max) {
         let nV;

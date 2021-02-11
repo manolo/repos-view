@@ -18,6 +18,7 @@ This program is available under Apache License Version 2.0, available at https:/
       return {
         /**
          * An array containing references to items with open row details.
+         * @type {Array<GridItem> | null | undefined}
          */
         detailsOpenedItems: {
           type: Array,
@@ -26,8 +27,31 @@ This program is available under Apache License Version 2.0, available at https:/
           }
         },
 
+        /**
+         * @type {HTMLTemplateElement}
+         * @protected
+         */
         _rowDetailsTemplate: Object,
 
+        /**
+         * Custom function for rendering the content of the row details.
+         * Receives three arguments:
+         *
+         * - `root` The row details content DOM element. Append your content to it.
+         * - `grid` The `<vaadin-grid>` element.
+         * - `model` The object with the properties related with
+         *   the rendered item, contains:
+         *   - `model.index` The index of the item.
+         *   - `model.item` The item.
+         *
+         * @type {GridRowDetailsRenderer | null | undefined}
+         */
+        rowDetailsRenderer: Function,
+
+        /**
+         * @type {!Array<!HTMLElement> | undefined}
+         * @protected
+         */
         _detailsCells: {
           type: Array,
         }
@@ -36,66 +60,90 @@ This program is available under Apache License Version 2.0, available at https:/
 
     static get observers() {
       return [
-        '_detailsOpenedItemsChanged(detailsOpenedItems.*, dataProvider, _rowDetailsTemplate, _physicalCountVal)',
-        '_rowDetailsTemplateChanged(_rowDetailsTemplate)'
+        '_detailsOpenedItemsChanged(detailsOpenedItems.*, _rowDetailsTemplate, rowDetailsRenderer)',
+        '_rowDetailsTemplateOrRendererChanged(_rowDetailsTemplate, rowDetailsRenderer)'
       ];
     }
 
-    _rowDetailsTemplateChanged(rowDetailsTemplate) {
-      if (rowDetailsTemplate) {
-        var templatizer = new Vaadin.Grid.Templatizer();
-        templatizer._grid = this;
-        templatizer.dataHost = this.dataHost;
-        templatizer.template = rowDetailsTemplate;
-        rowDetailsTemplate.templatizer = templatizer;
+    /** @private */
+    _rowDetailsTemplateOrRendererChanged(rowDetailsTemplate, rowDetailsRenderer) {
+      if (rowDetailsTemplate && rowDetailsRenderer) {
+        throw new Error('You should only use either a renderer or a template for row details');
+      }
+      if (rowDetailsTemplate || rowDetailsRenderer) {
+        if (rowDetailsTemplate && !rowDetailsTemplate.templatizer) {
+          var templatizer = new Vaadin.Grid.Templatizer();
+          templatizer._grid = this;
+          templatizer.dataHost = this.dataHost;
+          templatizer.template = rowDetailsTemplate;
+          rowDetailsTemplate.templatizer = templatizer;
+        }
 
+        if (this._columnTree) {
+          // Only update the rows if the column tree has already been initialized
+          Array.from(this.$.items.children).forEach(row => {
+            if (!row.querySelector('[part~=details-cell]')) {
+              this._updateRow(row, this._columnTree[this._columnTree.length - 1]);
+              this._a11yUpdateRowDetailsOpened(row, false);
+            }
+            // Clear any old template instances
+            delete row.querySelector('[part~=details-cell]')._instance;
+          });
+        }
 
-        Array.from(this.$.items.children).forEach(row => {
-          // Ensure the rows have a row details cell
-          this._updateRow(row, this._columnTree[this._columnTree.length - 1]);
-          // Clear any old template instances
-          delete row.querySelector('[part~=details-cell]')._instance;
-        });
-        this._update();
+        if (this.detailsOpenedItems.length) {
+          Array.from(this.$.items.children).forEach(this._toggleDetailsCell, this);
+          this._update();
+        }
       }
     }
 
-    _detailsOpenedItemsChanged(changeRecord, dataProvider, rowDetailsTemplate, physicalCount) {
-      if (dataProvider === undefined || !rowDetailsTemplate) {
-        return;
-      }
-
-      if (changeRecord.path === 'detailsOpenedItems.length') {
+    /** @private */
+    _detailsOpenedItemsChanged(changeRecord, rowDetailsTemplate, rowDetailsRenderer) {
+      if (changeRecord.path === 'detailsOpenedItems.length' || !changeRecord.value) {
         // Let’s avoid duplicate work of both “.splices” and “.length” updates.
         return;
       }
-
-      this._flushItemsDebouncer();
-
-      if (this._lastDetailsOpenedItems && physicalCount) {
-        this._physicalItems.forEach(this._toggleDetailsCell, this);
-        this._render();
-      }
-
-      this._lastDetailsOpenedItems = this.detailsOpenedItems;
+      Array.from(this.$.items.children).forEach(row => {
+        this._toggleDetailsCell(row, row._item);
+        this._a11yUpdateRowDetailsOpened(row, this._isDetailsOpened(row._item));
+        this._toggleAttribute('details-opened', this._isDetailsOpened(row._item), row);
+      });
     }
 
+    /**
+     * @param {!HTMLElement} cell
+     * @protected
+     */
     _configureDetailsCell(cell) {
       cell.setAttribute('part', 'cell details-cell');
       // Freeze the details cell, so that it does not scroll horizontally
       // with the normal cells. This way it looks less weird.
-      cell.setAttribute('frozen', '');
+      this._toggleAttribute('frozen', true, cell);
     }
 
+    /**
+     * @param {!HTMLElement} row
+     * @param {!GridItem} item
+     * @protected
+     */
     _toggleDetailsCell(row, item) {
       const cell = row.querySelector('[part~="details-cell"]');
+      if (!cell) {
+        return;
+      }
       const detailsHidden = !this._isDetailsOpened(item);
-      if (cell && (!cell._instance || cell.hidden !== detailsHidden)) {
+      const hiddenChanged = !!cell.hidden !== detailsHidden;
+
+      if (!cell._instance && !cell._renderer || cell.hidden !== detailsHidden) {
         cell.hidden = detailsHidden;
         if (detailsHidden) {
           row.style.removeProperty('padding-bottom');
         } else {
-          if (!cell._instance) {
+          if (this.rowDetailsRenderer) {
+            cell._renderer = this.rowDetailsRenderer;
+            cell._renderer.call(this, cell._content, this, {index: row.index, item: item});
+          } else if (this._rowDetailsTemplate && !cell._instance) {
             // Stamp the template
             cell._instance = this._rowDetailsTemplate.templatizer.createInstance();
             cell._content.innerHTML = '';
@@ -105,22 +153,35 @@ This program is available under Apache License Version 2.0, available at https:/
 
           Polymer.flush();
           row.style.setProperty('padding-bottom', `${cell.offsetHeight}px`);
+
+          requestAnimationFrame(() => this.notifyResize());
         }
+      }
+      if (hiddenChanged) {
+        this._updateMetrics();
+        this._positionItems();
       }
     }
 
+    /** @protected */
     _updateDetailsCellHeights() {
       Array.from(this.$.items.querySelectorAll('[part~="details-cell"]:not([hidden])')).forEach(cell => {
         cell.parentElement.style.setProperty('padding-bottom', `${cell.offsetHeight}px`);
       });
     }
 
+    /**
+     * @param {!GridItem} item
+     * @return {boolean}
+     * @protected
+     */
     _isDetailsOpened(item) {
       return this.detailsOpenedItems && this._getItemIndexInArray(item, this.detailsOpenedItems) !== -1;
     }
 
     /**
      * Open the details row of a given item.
+     * @param {!GridItem} item
      */
     openItemDetails(item) {
       if (!this._isDetailsOpened(item)) {
@@ -130,6 +191,7 @@ This program is available under Apache License Version 2.0, available at https:/
 
     /**
      * Close the details row of a given item.
+     * @param {!GridItem} item
      */
     closeItemDetails(item) {
       if (this._isDetailsOpened(item)) {
@@ -137,6 +199,7 @@ This program is available under Apache License Version 2.0, available at https:/
       }
     }
 
+    /** @private */
     _detailsOpenedInstanceChangedCallback(instance, value) {
       if (super._detailsOpenedInstanceChangedCallback) {
         super._detailsOpenedInstanceChangedCallback(instance, value);

@@ -14,27 +14,45 @@ This program is available under Apache License Version 2.0, available at https:/
   Vaadin.Grid.KeyboardNavigationMixin = superClass => class KeyboardNavigationMixin extends superClass {
     static get properties() {
       return {
+        /** @private */
         _headerFocusable: {
           type: Object,
           observer: '_focusableChanged'
         },
+
+        /**
+         * @type {!HTMLElement | undefined}
+         * @protected
+         */
         _itemsFocusable: {
           type: Object,
           observer: '_focusableChanged'
         },
+
+        /** @private */
         _footerFocusable: {
           type: Object,
           observer: '_focusableChanged'
         },
+
+        /** @private */
         _navigatingIsHidden: Boolean,
+
+        /**
+         * @type {number}
+         * @protected
+         */
         _focusedItemIndex: {
           type: Number,
           value: 0
         },
+
+        /** @private */
         _focusedColumnOrder: Number
       };
     }
 
+    /** @protected */
     ready() {
       super.ready();
 
@@ -44,6 +62,8 @@ This program is available under Apache License Version 2.0, available at https:/
       }
 
       this.addEventListener('keydown', this._onKeyDown);
+      this.addEventListener('keyup', this._onKeyUp);
+
       this.addEventListener('focusin', this._onFocusIn);
       this.addEventListener('focusout', this._onFocusOut);
 
@@ -59,6 +79,7 @@ This program is available under Apache License Version 2.0, available at https:/
       this.addEventListener('mouseup', () => this._isMousedown = false);
     }
 
+    /** @private */
     _focusableChanged(focusable, oldFocusable) {
       if (oldFocusable) {
         oldFocusable.setAttribute('tabindex', '-1');
@@ -68,10 +89,11 @@ This program is available under Apache License Version 2.0, available at https:/
       }
     }
 
+    /**
+     * @param {!KeyboardEvent} e
+     * @protected
+     */
     _onKeyDown(e) {
-      // Disable <iron-list> keydown handler
-      e.stopImmediatePropagation();
-
       // Ensure standard key value, unified across browsers
       let key = e.key;
       if (key === 'Up' || key === 'Down' || key === 'Left' || key === 'Right') {
@@ -123,6 +145,7 @@ This program is available under Apache License Version 2.0, available at https:/
       }
     }
 
+    /** @private */
     _ensureScrolledToIndex(index) {
       const targetRowInDom = Array.from(this.$.items.children).filter(child => child.index === index)[0];
       if (!targetRowInDom) {
@@ -130,7 +153,10 @@ This program is available under Apache License Version 2.0, available at https:/
       }
     }
 
+    /** @private */
     _onNavigationKeyDown(e, key) {
+      this._scrollHandler();
+
       e.preventDefault();
 
       function indexOfChildElement(el) {
@@ -142,10 +168,10 @@ This program is available under Apache License Version 2.0, available at https:/
       let dx = 0, dy = 0;
       switch (key) {
         case 'ArrowRight':
-          dx = 1;
+          dx = this.__isRTL ? -1 : 1;
           break;
         case 'ArrowLeft':
-          dx = -1;
+          dx = this.__isRTL ? 1 : -1;
           break;
         case 'Home':
           dx = -Infinity;
@@ -232,15 +258,15 @@ This program is available under Apache License Version 2.0, available at https:/
         if (isRowDetails) {
           this._focusedColumnOrder = 0;
         } else {
-          this._focusedColumnOrder = this._getColumns(activeRowGroup, rowIndex)[columnIndex]._order;
+          this._focusedColumnOrder = this._getColumns(activeRowGroup, rowIndex).filter(c => !c.hidden)[columnIndex]._order;
         }
       }
 
       // Find orderedColumnIndex — the index of order closest matching the
       // original _focusedColumnOrder in the sorted array of orders
       // of the visible columns on the destination row.
-      const dstColumns = this._getColumns(activeRowGroup, dstRowIndex);
-      const dstSortedColumnOrders = dstColumns.filter(c => !c.hidden).map(c => c._order)
+      const dstColumns = this._getColumns(activeRowGroup, dstRowIndex).filter(c => !c.hidden);
+      const dstSortedColumnOrders = dstColumns.map(c => c._order)
         .sort((b, a) => (b - a));
       const maxOrderedColumnIndex = dstSortedColumnOrders.length - 1;
       const orderedColumnIndex = dstSortedColumnOrders.indexOf(
@@ -264,7 +290,7 @@ This program is available under Apache License Version 2.0, available at https:/
       }
 
       // This has to be set after scrolling, otherwise it can be removed by
-      // `_preventScrollerRotatingCellFocus(item, index)` during scrolling.
+      // `_preventScrollerRotatingCellFocus(row, index)` during scrolling.
       this._toggleAttribute('navigating', true, this);
 
       const columnIndexByOrder = dstColumns.reduce((acc, col, i) => (acc[col._order] = i, acc), {});
@@ -307,6 +333,7 @@ This program is available under Apache License Version 2.0, available at https:/
       dstCell.focus();
     }
 
+    /** @private */
     _parseEventPath(path) {
       const tableIndex = path.indexOf(this.$.table);
       return {
@@ -316,6 +343,7 @@ This program is available under Apache License Version 2.0, available at https:/
       };
     }
 
+    /** @private */
     _onInteractionKeyDown(e, key) {
       const localTarget = e.composedPath()[0];
       const localTargetIsTextInput = localTarget.localName === 'input' &&
@@ -356,6 +384,7 @@ This program is available under Apache License Version 2.0, available at https:/
       }
     }
 
+    /** @private */
     _predictFocusStepTarget(srcElement, step) {
       const tabOrder = [
         this.$.table,
@@ -376,6 +405,7 @@ This program is available under Apache License Version 2.0, available at https:/
       return tabOrder[index];
     }
 
+    /** @private */
     _onTabKeyDown(e) {
       const focusTarget = this._predictFocusStepTarget(e.composedPath()[0], e.shiftKey ? -1 : 1);
 
@@ -410,7 +440,24 @@ This program is available under Apache License Version 2.0, available at https:/
       this._toggleAttribute('navigating', true, this);
     }
 
+    /** @private */
     _onSpaceKeyDown(e) {
+      e.preventDefault();
+
+      const cell = e.composedPath()[0];
+      if (!cell._content || !cell._content.firstElementChild) {
+        this.dispatchEvent(new CustomEvent('cell-activate', {detail: {
+          model: this.__getRowModel(cell.parentElement)
+        }}));
+      }
+    }
+
+    /** @private */
+    _onKeyUp(e) {
+      if (!/^( |SpaceBar)$/.test(e.key)) {
+        return;
+      }
+
       e.preventDefault();
 
       const cell = e.composedPath()[0];
@@ -418,11 +465,13 @@ This program is available under Apache License Version 2.0, available at https:/
         const wasNavigating = this.hasAttribute('navigating');
         cell._content.firstElementChild.click();
         this._toggleAttribute('navigating', wasNavigating, this);
-      } else {
-        this.dispatchEvent(new CustomEvent('cell-activate', {detail: {model: cell._instance}}));
       }
     }
 
+    /**
+     * @param {!FocusEvent} e
+     * @protected
+     */
     _onFocusIn(e) {
       if (!this._isMousedown) {
         this._toggleAttribute('navigating', true, this);
@@ -445,11 +494,16 @@ This program is available under Apache License Version 2.0, available at https:/
       }
     }
 
+    /**
+     * @param {!FocusEvent} e
+     * @protected
+     */
     _onFocusOut(e) {
       this._toggleAttribute('navigating', false, this);
       this._detectInteracting(e);
     }
 
+    /** @private */
     _onCellFocusIn(e) {
       this._detectInteracting(e);
 
@@ -470,6 +524,7 @@ This program is available under Apache License Version 2.0, available at https:/
       this._detectFocusedItemIndex(e);
     }
 
+    /** @private */
     _onCellFocusOut(e) {
       if (e.composedPath().indexOf(this.$.table) === 3) {
         const cell = e.composedPath()[0];
@@ -478,12 +533,14 @@ This program is available under Apache License Version 2.0, available at https:/
       }
     }
 
+    /** @private */
     _detectInteracting(e) {
       this._toggleAttribute('interacting',
         e.composedPath().some(el => el.localName === 'vaadin-grid-cell-content'),
         this);
     }
 
+    /** @private */
     _detectFocusedItemIndex(e) {
       const {rowGroup, row} = this._parseEventPath(e.composedPath());
       if (rowGroup === this.$.items) {
@@ -491,8 +548,13 @@ This program is available under Apache License Version 2.0, available at https:/
       }
     }
 
-    _preventScrollerRotatingCellFocus(item, index) {
-      if (item.index === this._focusedItemIndex && this.hasAttribute('navigating') && this._activeRowGroup === this.$.items) {
+    /**
+     * @param {!HTMLTableRowElement} row
+     * @param {number} index
+     * @protected
+     */
+    _preventScrollerRotatingCellFocus(row, index) {
+      if (row.index === this._focusedItemIndex && this.hasAttribute('navigating') && this._activeRowGroup === this.$.items) {
         // Focused item has went, hide navigation mode
         this._navigatingIsHidden = true;
         this._toggleAttribute('navigating', false, this);
@@ -504,6 +566,12 @@ This program is available under Apache License Version 2.0, available at https:/
       }
     }
 
+    /**
+     * @param {HTMLTableSectionElement=} rowGroup
+     * @param {number=} rowIndex
+     * @return {!Array<!GridColumnElement>}
+     * @protected
+     */
     _getColumns(rowGroup, rowIndex) {
       let columnTreeLevel = this._columnTree.length - 1;
       if (rowGroup === this.$.header) {
@@ -514,9 +582,10 @@ This program is available under Apache License Version 2.0, available at https:/
       return this._columnTree[columnTreeLevel];
     }
 
+    /** @protected */
     _resetKeyboardNavigation() {
       if (this.$.header.firstElementChild) {
-        this._headerFocusable = this.$.header.firstElementChild.firstElementChild;
+        this._headerFocusable = Array.from(this.$.header.firstElementChild.children).filter(el => !el.hidden)[0];
       }
 
       if (this.$.items.firstElementChild) {
@@ -526,15 +595,19 @@ This program is available under Apache License Version 2.0, available at https:/
           }
         });
         if (firstVisibleIndexRow) {
-          this._itemsFocusable = firstVisibleIndexRow.firstElementChild;
+          this._itemsFocusable = Array.from(firstVisibleIndexRow.children).filter(el => !el.hidden)[0];
         }
       }
 
       if (this.$.footer.firstElementChild) {
-        this._footerFocusable = this.$.footer.firstElementChild.firstElementChild;
+        this._footerFocusable = Array.from(this.$.footer.firstElementChild.children).filter(el => !el.hidden)[0];
       }
     }
 
+    /**
+     * @param {!HTMLElement} dstCell
+     * @protected
+     */
     _scrollHorizontallyToCell(dstCell) {
       if (dstCell.hasAttribute('frozen') || this._elementMatches(dstCell, '[part~="details-cell"]')) {
         // These cells are, by design, always visible, no need to scroll.
@@ -577,6 +650,7 @@ This program is available under Apache License Version 2.0, available at https:/
       }
     }
 
+    /** @private */
     _elementMatches(el, query) {
       return el.matches ? el.matches(query) :
         Array.from(el.parentNode.querySelectorAll(query)).indexOf(el) !== -1;

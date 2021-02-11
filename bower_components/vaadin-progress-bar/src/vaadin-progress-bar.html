@@ -15,6 +15,8 @@ This program is available under Apache License Version 2.0, available at https:/
     <style>
       :host {
         display: block;
+        width: 100%; /* prevent collapsing inside non-stretching column flex */
+        height: 8px;
       }
 
       :host([hidden]) {
@@ -31,6 +33,11 @@ This program is available under Apache License Version 2.0, available at https:/
         transform: scaleX(var(--vaadin-progress-value));
       }
 
+      /* RTL specific styles */
+
+      :host([dir="rtl"]) [part="value"] {
+        transform-origin: 100% 50%;
+      }
     </style>
 
     <div part="bar">
@@ -42,7 +49,7 @@ This program is available under Apache License Version 2.0, available at https:/
   <script>
     (function() {
       /**
-       * `<vaadin-progress-bar>` is a Polymer 2 progress bar.
+       * `<vaadin-progress-bar>` is a Web Component for progress bars.
        *
        * ```html
        * <vaadin-progress-bar min="0" max="1" value="0.5">
@@ -75,6 +82,7 @@ This program is available under Apache License Version 2.0, available at https:/
        * @memberof Vaadin
        * @mixes Vaadin.ProgressMixin
        * @mixes Vaadin.ThemableMixin
+       * @mixes Vaadin.ElementMixin
        * @demo demo/index.html
        */
       class ProgressBarElement extends Vaadin.ElementMixin(Vaadin.ThemableMixin(Vaadin.ProgressMixin(Polymer.Element))) {
@@ -83,7 +91,7 @@ This program is available under Apache License Version 2.0, available at https:/
         }
 
         static get version() {
-          return '1.0.0-beta1';
+          return '1.3.0';
         }
       }
 

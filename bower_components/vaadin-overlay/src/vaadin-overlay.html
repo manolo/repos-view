@@ -9,7 +9,8 @@ This program is available under Apache License Version 2.0, available at https:/
 <link rel="import" href="../../polymer/lib/utils/render-status.html">
 <link rel="import" href="../../polymer/lib/utils/flattened-nodes-observer.html">
 <link rel="import" href="../../vaadin-themable-mixin/vaadin-themable-mixin.html">
-<link rel="import" href="../../iron-overlay-behavior/iron-focusables-helper.html">
+<link rel="import" href="../../vaadin-element-mixin/vaadin-dir-mixin.html">
+<link rel="import" href="vaadin-focusables-helper.html">
 
 <dom-module id="vaadin-overlay">
   <template>
@@ -48,14 +49,12 @@ This program is available under Apache License Version 2.0, available at https:/
         /* Remove tap highlight on touch devices. */
         -webkit-tap-highlight-color: transparent;
 
-        /* stylelint-disable */
         /* CSS API for host */
-        --vaadin-overlay-viewport-bottom: 0px;
-        /* stylelint-enable */
+        --vaadin-overlay-viewport-bottom: 0;
       }
 
       :host([hidden]),
-      :host(:not([opened])) {
+      :host(:not([opened]):not([closing])) {
         display: none !important;
       }
 
@@ -84,23 +83,135 @@ This program is available under Apache License Version 2.0, available at https:/
       }
     </style>
 
-    <div id="backdrop" part="backdrop" hidden$="{{!withBackdrop}}">
-
-    </div>
-    <div part="overlay" id="overlay">
-      <div part="content" id="content"></div>
+    <div id="backdrop" part="backdrop" hidden$="{{!withBackdrop}}"></div>
+    <div part="overlay" id="overlay" tabindex="0">
+      <div part="content" id="content">
+        <slot></slot>
+      </div>
     </div>
   </template>
 </dom-module>
 
 <script>
   (function() {
+    let overlayContentCounter = 0;
+    const overlayContentCache = {};
+
+    const createOverlayContent = (cssText) => {
+      const is = overlayContentCache[cssText] || processOverlayStyles(cssText);
+      return document.createElement(is);
+    };
+
+    const processOverlayStyles = (cssText) => {
+      overlayContentCounter++;
+      const is = `vaadin-overlay-content-${overlayContentCounter}`;
+
+      const styledTemplate = document.createElement('template');
+      const style = document.createElement('style');
+      style.textContent = ':host { display: block; }' + cssText;
+      styledTemplate.content.appendChild(style);
+
+      if (window.ShadyCSS) {
+        window.ShadyCSS.prepareTemplate(styledTemplate, is);
+      }
+
+      // NOTE(platosha): Have to use an awkward IIFE returning class here
+      // to prevent this class from showing up in analysis.json & API docs.
+      const klass = (() => /** @private */ class extends HTMLElement {
+        static get is() {
+          return is;
+        }
+
+        constructor() {
+          super();
+
+          if (!this.shadowRoot) {
+            this.attachShadow({mode: 'open'});
+            this.shadowRoot.appendChild(document.importNode(styledTemplate.content, true));
+          }
+        }
+
+        connectedCallback() {
+          if (window.ShadyCSS) {
+            window.ShadyCSS.styleElement(this);
+          }
+        }
+      })();
+
+      customElements.define(klass.is, klass);
+
+      overlayContentCache[cssText] = is;
+      return is;
+    };
+
     /**
-     * `<vaadin-overlay>` is a Polymer 2 element for creating overlays.
+     *
+     * `<vaadin-overlay>` is a Web Component for creating overlays. The content of the overlay
+     * can be populated in two ways: imperatively by using renderer callback function and
+     * declaratively by using Polymer's Templates.
+     *
+     * ### Rendering
+     *
+     * By default, the overlay uses the content provided by using the renderer callback function.
+     *
+     * The renderer function provides `root`, `owner`, `model` arguments when applicable.
+     * Generate DOM content by using `model` object properties if needed, append it to the `root`
+     * element and control the state of the host element by accessing `owner`. Before generating new
+     * content, users are able to check if there is already content in `root` for reusing it.
+     *
+     * ```html
+     * <vaadin-overlay id="overlay"></vaadin-overlay>
+     * ```
+     * ```js
+     * const overlay = document.querySelector('#overlay');
+     * overlay.renderer = function(root) {
+     *  root.textContent = "Overlay content";
+     * };
+     * ```
+     *
+     * Renderer is called on the opening of the overlay and each time the related model is updated.
+     * DOM generated during the renderer call can be reused
+     * in the next renderer call and will be provided with the `root` argument.
+     * On first call it will be empty.
+     *
+     * **NOTE:** when the renderer property is defined, the `<template>` content is not used.
+     *
+     * ### Templating
+     *
+     * Alternatively, the content can be provided with Polymer Template.
+     * Overlay finds the first child template and uses that in case renderer callback function
+     * is not provided. You can also set a custom template using the `template` property.
+     *
+     * After the content from the template is stamped, the `content` property
+     * points to the content container.
+     *
+     * The overlay provides `forwardHostProp` when calling
+     * `Polymer.Templatize.templatize` for the template, so that the bindings
+     * from the parent scope propagate to the content.  You can also pass
+     * custom `instanceProps` object using the `instanceProps` property.
+     *
+     * ```html
+     * <vaadin-overlay>
+     *   <template>Overlay content</template>
+     * </vaadin-overlay>
+     * ```
+     *
+     * **NOTE:** when using `instanceProps`: because of the Polymer limitation,
+     * every template can only be templatized once, so it is important
+     * to set `instanceProps` before the `template` is assigned to the overlay.
      *
      * ### Styling
      *
-     * The following Shadow DOM parts are available for styling:
+     * To style the overlay content, use styles in the parent scope:
+     *
+     * - If the overlay is used in a component, then the component styles
+     *   apply the overlay content.
+     * - If the overlay is used in the global DOM scope, then global styles
+     *   apply to the overlay content.
+     *
+     * See examples for styling the overlay content in the live demos.
+     *
+     * The following Shadow DOM parts are available for styling the overlay component itself:
      *
      * Part name  | Description
      * -----------|---------------------------------------------------------|
@@ -108,11 +219,18 @@ This program is available under Apache License Version 2.0, available at https:/
      * `overlay`  | Container for position/sizing/alignment of the content
      * `content`  | Content of the overlay
      *
+     * The following state attributes are available for styling:
+     *
+     * Attribute | Description | Part
+     * ---|---|---
+     * `opening` | Applied just after the overlay is attached to the DOM. You can apply a CSS @keyframe animation for this state. | `:host`
+     * `closing` | Applied just before the overlay is detached from the DOM. You can apply a CSS @keyframe animation for this state. | `:host`
+     *
      * The following custom CSS properties are available for styling:
      *
      * Custom CSS property | Description | Default value
      * ---|---|---
-     * `--vaadin-overlay-viewport-bottom` | Bottom offset of the visible viewport area | `0px` or detected offset
+     * `--vaadin-overlay-viewport-bottom` | Bottom offset of the visible viewport area | `0` or detected offset
      *
      * See [ThemableMixin – how to apply styles for shadow parts](https://github.com/vaadin/vaadin-themable-mixin/wiki)
      *
@@ -120,29 +238,70 @@ This program is available under Apache License Version 2.0, available at https:/
      * @mixes Vaadin.ThemableMixin
      * @demo demo/index.html
      */
-    class OverlayElement extends Vaadin.ThemableMixin(Polymer.Element) {
+    class OverlayElement extends Vaadin.ThemableMixin(Vaadin.DirMixin(Polymer.Element)) {
+
       static get is() {
         return 'vaadin-overlay';
       }
 
       static get properties() {
         return {
+          /**
+           * When true, the overlay is visible and attached to body.
+           */
           opened: {
             type: Boolean,
             notify: true,
+            observer: '_openedChanged',
             reflectToAttribute: true
           },
 
+          /**
+           * Owner element passed with renderer function
+           * @type {HTMLElement}
+           */
+          owner: Element,
+
+          /**
+           * Custom function for rendering the content of the overlay.
+           * Receives three arguments:
+           *
+           * - `root` The root container DOM element. Append your content to it.
+           * - `owner` The host element of the renderer function.
+           * - `model` The object with the properties related with rendering.
+           * @type {OverlayRenderer | null | undefined}
+           */
+          renderer: Function,
+
+          /**
+           * The template of the overlay content.
+           * @type {HTMLTemplateElement | null | undefined}
+           */
           template: {
             type: Object,
             notify: true
           },
 
+          /**
+           * Optional argument for `Polymer.Templatize.templatize`.
+           */
+          instanceProps: {
+            type: Object
+          },
+
+          /**
+           * References the content container after the template is stamped.
+           * @type {!HTMLElement | undefined}
+           */
           content: {
             type: Object,
             notify: true
           },
 
+          /**
+           * When true the overlay has backdrop on top of content when opened.
+           * @type {boolean}
+           */
           withBackdrop: {
             type: Boolean,
             value: false,
@@ -150,8 +309,14 @@ This program is available under Apache License Version 2.0, available at https:/
           },
 
           /**
+           * Object with properties that is passed to `renderer` function
+           */
+          model: Object,
+
+          /**
            * When true the overlay won't disable the main content, showing
            * it doesn’t change the functionality of the user interface.
+           * @type {boolean}
            */
           modeless: {
             type: Boolean,
@@ -161,38 +326,80 @@ This program is available under Apache License Version 2.0, available at https:/
           },
 
           /**
+           * When set to true, the overlay is hidden. This also closes the overlay
+           * immediately in case there is a closing animation in progress.
+           * @type {boolean}
+           */
+          hidden: {
+            type: Boolean,
+            reflectToAttribute: true,
+            observer: '_hiddenChanged'
+          },
+
+          /**
            * When true move focus to the first focusable element in the overlay,
            * or to the overlay if there are no focusable elements.
+           * @type {boolean}
            */
           focusTrap: {
             type: Boolean,
             value: false
           },
 
-          _focusedElement: {
-            type: Object
+          /**
+           * Set to true to enable restoring of focus when overlay is closed.
+           * @type {boolean}
+           */
+          restoreFocusOnClose: {
+            type: Boolean,
+            value: false,
           },
 
+          /** @private */
           _mouseDownInside: {
             type: Boolean
           },
 
+          /** @private */
           _mouseUpInside: {
             type: Boolean
           },
 
+          /** @private */
           _instance: {
             type: Object
           },
 
-          _boundIronOverlayCanceledListener: {
-            type: Object
-          }
+          /** @private */
+          _originalContentPart: Object,
+
+          /** @private */
+          _contentNodes: Array,
+
+          /** @private */
+          _oldOwner: Element,
+
+          /** @private */
+          _oldModel: Object,
+
+          /** @private */
+          _oldTemplate: Object,
+
+          /** @private */
+          _oldInstanceProps: Object,
+
+          /** @private */
+          _oldRenderer: Object,
+
+          /** @private */
+          _oldOpened: Boolean
         };
       }
 
       static get observers() {
-        return ['_openedChanged(opened)', '_templateChanged(template)', '_contentChanged(content)'];
+        return [
+          '_templateOrRendererChanged(template, renderer, owner, model, instanceProps, opened)'
+        ];
       }
 
       constructor() {
@@ -207,10 +414,7 @@ This program is available under Apache License Version 2.0, available at https:/
         });
 
         // Listener for preventing closing of the paper-dialog and all components extending `iron-overlay-behavior`.
-        this._boundIronOverlayCanceledListener = e => {
-          e.preventDefault();
-          window.removeEventListener('iron-overlay-canceled', this._boundIronOverlayCanceledListener);
-        };
+        this._boundIronOverlayCanceledListener = this._ironOverlayCanceled.bind(this);
 
         if (/iPad|iPhone|iPod/.test(navigator.userAgent)) {
           this._boundIosResizeListener = () => this._detectIosNavbar();
@@ -230,6 +434,7 @@ This program is available under Apache License Version 2.0, available at https:/
         this.$.backdrop.addEventListener('click', () => {});
       }
 
+      /** @private */
       _detectIosNavbar() {
         if (!this.opened) {
           return;
@@ -245,15 +450,20 @@ This program is available under Apache License Version 2.0, available at https:/
         if (landscape && clientHeight > innerHeight) {
           this.style.setProperty('--vaadin-overlay-viewport-bottom', clientHeight - innerHeight + 'px');
         } else {
-          this.style.setProperty('--vaadin-overlay-viewport-bottom', '0px');
+          this.style.setProperty('--vaadin-overlay-viewport-bottom', '0');
         }
       }
 
+      /**
+       * @param {!Array<!Element>} nodes
+       * @protected
+       */
       _setTemplateFromNodes(nodes) {
         this.template = nodes.filter(node => node.localName && node.localName === 'template')[0] || this.template;
       }
 
       /**
+       * @param {Event=} sourceEvent
        * @event vaadin-overlay-close
        * fired before the `vaadin-overlay` will be closed. If canceled the closing of the overlay is canceled as well.
        */
@@ -268,10 +478,6 @@ This program is available under Apache License Version 2.0, available at https:/
       connectedCallback() {
         super.connectedCallback();
 
-        if (this.parentNode === document.body) {
-          window.addEventListener('iron-overlay-canceled', this._boundIronOverlayCanceledListener);
-        }
-
         if (this._boundIosResizeListener) {
           this._detectIosNavbar();
           window.addEventListener('resize', this._boundIosResizeListener);
@@ -281,25 +487,20 @@ This program is available under Apache License Version 2.0, available at https:/
       disconnectedCallback() {
         super.disconnectedCallback();
 
-        // Removing the event listener in case `iron-overlay-canceled` was not fired.
-        // In Shady DOM the overlay can be reattached asynchronously so we need to check that the overlay is not currently attached to body.
-        if (window.ShadyDOM && window.ShadyDOM.inUse) {
-          if (this.parentNode !== document.body) {
-            window.removeEventListener('iron-overlay-canceled', this._boundIronOverlayCanceledListener);
-          }
-        } else {
-          if (!this.parentNode) {
-            window.removeEventListener('iron-overlay-canceled', this._boundIronOverlayCanceledListener);
-          }
-        }
-
         this._boundIosResizeListener && window.removeEventListener('resize', this._boundIosResizeListener);
       }
 
+      /** @private */
+      _ironOverlayCanceled(event) {
+        event.preventDefault();
+      }
+
+      /** @private */
       _mouseDownListener(event) {
         this._mouseDownInside = event.composedPath().indexOf(this.$.overlay) >= 0;
       }
 
+      /** @private */
       _mouseUpListener(event) {
         this._mouseUpInside = event.composedPath().indexOf(this.$.overlay) >= 0;
       }
@@ -311,6 +512,8 @@ This program is available under Apache License Version 2.0, available at https:/
        *
        * @event vaadin-overlay-outside-click
        * fired before the `vaadin-overlay` will be closed on outside click. If canceled the closing of the overlay is canceled as well.
+       *
+       * @private
        */
       _outsideClickListener(event) {
         if (event.composedPath().indexOf(this.$.overlay) !== -1 ||
@@ -334,6 +537,8 @@ This program is available under Apache License Version 2.0, available at https:/
       /**
        * @event vaadin-overlay-escape-press
        * fired before the `vaadin-overlay` will be closed on ESC button press. If canceled the closing of the overlay is canceled as well.
+       *
+       * @private
        */
       _keydownListener(event) {
         if (!this._last) {
@@ -341,7 +546,7 @@ This program is available under Apache License Version 2.0, available at https:/
         }
 
         // TAB
-        if (event.key === 'Tab' && this.focusTrap) {
+        if (event.key === 'Tab' && this.focusTrap && !event.defaultPrevented) {
           // if only tab key is pressed, cycle forward, else cycle backwards.
           this._cycleTab(event.shiftKey ? -1 : 1);
 
@@ -358,22 +563,30 @@ This program is available under Apache License Version 2.0, available at https:/
         }
       }
 
+      /** @protected */
+      _ensureTemplatized() {
+        this._setTemplateFromNodes(Array.from(this.children));
+      }
+
       /**
        * @event vaadin-overlay-open
        * fired after the `vaadin-overlay` is opened.
+       *
+       * @private
        */
-      _openedChanged(opened) {
+      _openedChanged(opened, wasOpened) {
+        if (!this._instance) {
+          this._ensureTemplatized();
+        }
+
         if (opened) {
-          this._placeholder = document.createComment('vaadin-overlay-placeholder');
-          this.parentNode.insertBefore(this._placeholder, this);
-          document.body.appendChild(this);
+          // Store focused node.
+          this.__restoreFocusNode = this._getActiveElement();
+          this._animatedOpening();
 
           Polymer.RenderStatus.afterNextRender(this, () => {
-            if (this.focusTrap) {
-              // Focus
-              //  - the overlay content by default
-              //  - or the first focusable element if focusTrap is true
-              this._cycleTab(1, -1);
+            if (this.focusTrap && !this.contains(document._activeElement || document.activeElement)) {
+              this._cycleTab(0, 0);
             }
 
             const evt = new CustomEvent('vaadin-overlay-open', {bubbles: true});
@@ -381,141 +594,505 @@ This program is available under Apache License Version 2.0, available at https:/
           });
 
           if (!this.modeless) {
-            this._enterModalState();
+            this._addGlobalListeners();
           }
-        } else {
-          if (this._placeholder) {
-            this._placeholder.parentNode.insertBefore(this, this._placeholder);
-            this._processPendingMutationObserversFor(document.body);
-            this._placeholder.parentNode.removeChild(this._placeholder);
+        } else if (wasOpened) {
+          this._animatedClosing();
+
+          if (!this.modeless) {
+            this._removeGlobalListeners();
           }
-          this._exitModalState();
+        }
+      }
+
+      /** @private */
+      _hiddenChanged(hidden) {
+        if (hidden && this.hasAttribute('closing')) {
+          this._flushAnimation('closing');
         }
       }
 
       /**
-       * returns true if this is the last one in the opened overlays stack
+       * @return {boolean}
+       * @protected
        */
-      get _last() {
-        return this == Array.from(document.body.children).filter(e => e instanceof Vaadin.OverlayElement).pop();
+      _shouldAnimate() {
+        const name = getComputedStyle(this).getPropertyValue('animation-name');
+        const hidden = getComputedStyle(this).getPropertyValue('display') === 'none';
+        return !hidden && name && name != 'none';
       }
 
+      /**
+       * @param {string} type
+       * @param {Function} callback
+       * @protected
+       */
+      _enqueueAnimation(type, callback) {
+        const handler = `__${type}Handler`;
+        const listener = event => {
+          if (event && event.target !== this) {
+            return;
+          }
+          callback();
+          this.removeEventListener('animationend', listener);
+          delete this[handler];
+        };
+        this[handler] = listener;
+        this.addEventListener('animationend', listener);
+      }
+
+      /**
+       * @param {string} type
+       * @protected
+       */
+      _flushAnimation(type) {
+        const handler = `__${type}Handler`;
+        if (typeof this[handler] === 'function') {
+          this[handler]();
+        }
+      }
+
+      /** @protected */
+      _animatedOpening() {
+        if (this.parentNode === document.body && this.hasAttribute('closing')) {
+          this._flushAnimation('closing');
+        }
+        this._attachOverlay();
+        if (!this.modeless) {
+          this._enterModalState();
+        }
+        this.setAttribute('opening', '');
+
+        const finishOpening = () => {
+          document.addEventListener('iron-overlay-canceled', this._boundIronOverlayCanceledListener);
+
+          this.removeAttribute('opening');
+        };
+
+        if (this._shouldAnimate()) {
+          this._enqueueAnimation('opening', finishOpening);
+        } else {
+          finishOpening();
+        }
+      }
+
+      /** @protected */
+      _attachOverlay() {
+        this._placeholder = document.createComment('vaadin-overlay-placeholder');
+        this.parentNode.insertBefore(this._placeholder, this);
+        document.body.appendChild(this);
+        this.bringToFront();
+      }
+
+      /** @protected */
+      _animatedClosing() {
+        if (this.hasAttribute('opening')) {
+          this._flushAnimation('opening');
+        }
+        if (this._placeholder) {
+          this._exitModalState();
+
+          if (this.restoreFocusOnClose && this.__restoreFocusNode) {
+            // If the activeElement is `<body>` or inside the overlay,
+            // we are allowed to restore the focus. In all the other
+            // cases focus might have been moved elsewhere by another
+            // component or by the user interaction (e.g. click on a
+            // button outside the overlay).
+            const activeElement = this._getActiveElement();
+
+            if (activeElement === document.body || this._deepContains(activeElement)) {
+              this.__restoreFocusNode.focus();
+            }
+            this.__restoreFocusNode = null;
+          }
+
+          this.setAttribute('closing', '');
+
+          const finishClosing = () => {
+            document.removeEventListener('iron-overlay-canceled', this._boundIronOverlayCanceledListener);
+            this._detachOverlay();
+            this.shadowRoot.querySelector('[part="overlay"]').style.removeProperty('pointer-events');
+            this.removeAttribute('closing');
+          };
+
+          if (this._shouldAnimate()) {
+            this._enqueueAnimation('closing', finishClosing);
+          } else {
+            finishClosing();
+          }
+        }
+      }
+
+      /** @protected */
+      _detachOverlay() {
+        this._placeholder.parentNode.insertBefore(this, this._placeholder);
+        this._placeholder.parentNode.removeChild(this._placeholder);
+      }
+
+      /**
+       * Returns all attached overlays in visual stacking order.
+       * @private
+       */
+      static get __attachedInstances() {
+        return Array.from(document.body.children)
+          .filter(el => el instanceof OverlayElement && !el.hasAttribute('closing'))
+          .sort((a, b) => (a.__zIndex - b.__zIndex) || 0);
+      }
+
+      /**
+       * returns true if this is the last one in the opened overlays stack
+       * @return {boolean}
+       * @protected
+       */
+      get _last() {
+        return this === OverlayElement.__attachedInstances.pop();
+      }
+
+      /** @private */
       _modelessChanged(modeless) {
         if (!modeless) {
           if (this.opened) {
+            this._addGlobalListeners();
             this._enterModalState();
           }
         } else {
+          this._removeGlobalListeners();
           this._exitModalState();
         }
       }
 
-      _enterModalState() {
+      /** @protected */
+      _addGlobalListeners() {
         document.addEventListener('mousedown', this._boundMouseDownListener);
         document.addEventListener('mouseup', this._boundMouseUpListener);
-        document.addEventListener('click', this._boundOutsideClickListener, true);
+        // Firefox leaks click to document on contextmenu even if prevented
+        // https://bugzilla.mozilla.org/show_bug.cgi?id=990614
+        document.documentElement.addEventListener('click', this._boundOutsideClickListener, true);
         document.addEventListener('keydown', this._boundKeydownListener);
+      }
 
+      /** @protected */
+      _enterModalState() {
         if (document.body.style.pointerEvents !== 'none') {
           // Set body pointer-events to 'none' to disable mouse interactions with
           // other document nodes.
           this._previousDocumentPointerEvents = document.body.style.pointerEvents;
           document.body.style.pointerEvents = 'none';
         }
+
+        // Disable pointer events in other attached overlays
+        OverlayElement.__attachedInstances.forEach(el => {
+          if (el !== this) {
+            el.shadowRoot.querySelector('[part="overlay"]').style.pointerEvents = 'none';
+          }
+        });
       }
 
-      _exitModalState() {
+      /** @protected */
+      _removeGlobalListeners() {
         document.removeEventListener('mousedown', this._boundMouseDownListener);
         document.removeEventListener('mouseup', this._boundMouseUpListener);
-        document.removeEventListener('click', this._boundOutsideClickListener, true);
+        document.documentElement.removeEventListener('click', this._boundOutsideClickListener, true);
         document.removeEventListener('keydown', this._boundKeydownListener);
+      }
 
+      /** @protected */
+      _exitModalState() {
         if (this._previousDocumentPointerEvents !== undefined) {
           // Restore body pointer-events
           document.body.style.pointerEvents = this._previousDocumentPointerEvents;
           delete this._previousDocumentPointerEvents;
         }
+
+        // Restore pointer events in the previous overlay(s)
+        const instances = OverlayElement.__attachedInstances;
+        let el;
+        // Use instances.pop() to ensure the reverse order
+        while (el = instances.pop()) {
+          if (el === this) {
+            // Skip the current instance
+            continue;
+          }
+          el.shadowRoot.querySelector('[part="overlay"]').style.removeProperty('pointer-events');
+          if (!el.modeless) {
+            // Stop after the last modal
+            break;
+          }
+        }
       }
 
-      _templateChanged(template) {
-        const Templatizer = Polymer.Templatize.templatize(template, this, {
-          forwardHostProp: function(prop, value) {
-            if (this._instance) {
-              this._instance.forwardHostProp(prop, value);
-            }
+      /** @protected */
+      _removeOldContent() {
+        if (!this.content || !this._contentNodes) {
+          return;
+        }
+
+        this._observer.disconnect();
+
+        this._contentNodes.forEach(node => {
+          if (node.parentNode === this.content) {
+            this.content.removeChild(node);
           }
         });
 
-        this._instance = new Templatizer({});
-        this.content = this._instance.root;
+        if (this._originalContentPart) {
+          // Restore the original <div part="content">
+          this.$.content.parentNode.replaceChild(this._originalContentPart, this.$.content);
+          this.$.content = this._originalContentPart;
+          this._originalContentPart = undefined;
+        }
+
+        this._observer.connect();
+
+        this._contentNodes = undefined;
+        this.content = undefined;
       }
 
-      _contentChanged(content) {
-        this.$.content.appendChild(content);
+      /**
+       * @param {!HTMLTemplateElement} template
+       * @param {object} instanceProps
+       * @protected
+       */
+      _stampOverlayTemplate(template, instanceProps) {
+        this._removeOldContent();
+
+        if (!template._Templatizer) {
+          template._Templatizer = Polymer.Templatize.templatize(template, this, {
+            instanceProps: instanceProps,
+            forwardHostProp: function(prop, value) {
+              if (this._instance) {
+                this._instance.forwardHostProp(prop, value);
+              }
+            }
+          });
+        }
+
+        this._instance = new template._Templatizer({});
+        this._contentNodes = Array.from(this._instance.root.childNodes);
+
+        const templateRoot = template._templateRoot || (template._templateRoot = template.getRootNode());
+        const _isScoped = templateRoot !== document;
+
+        if (_isScoped) {
+          const isShady = window.ShadyCSS && !window.ShadyCSS.nativeShadow;
+
+          if (!this.$.content.shadowRoot) {
+            this.$.content.attachShadow({mode: 'open'});
+          }
+
+          let scopeCssText = Array.from(templateRoot.querySelectorAll('style'))
+            .reduce((result, style) => result + style.textContent, '');
+
+          if (isShady) {
+            // NOTE(platosha): ShadyCSS removes <style>’s from templates, so
+            // we have to use these protected APIs to get their contents back
+            const styleInfo = window.ShadyCSS.ScopingShim
+              ._styleInfoForNode(templateRoot.host);
+            if (styleInfo) {
+              scopeCssText += styleInfo._getStyleRules().parsedCssText;
+              scopeCssText += '}';
+            }
+          }
+
+          // The overlay root’s :host styles should not apply inside the overlay
+          scopeCssText = scopeCssText.replace(/:host/g, ':host-nomatch');
+
+          if (scopeCssText) {
+            if (isShady) {
+              // ShadyDOM: replace the <div part="content"> with a generated
+              // styled custom element
+              const contentPart = createOverlayContent(scopeCssText);
+              contentPart.id = 'content';
+              contentPart.setAttribute('part', 'content');
+              this.$.content.parentNode.replaceChild(contentPart, this.$.content);
+              // NOTE(platosha): carry the style scope of the content part
+              contentPart.className = this.$.content.className;
+              this._originalContentPart = this.$.content;
+              this.$.content = contentPart;
+            } else {
+              // Shadow DOM: append a style to the content shadowRoot
+              const style = document.createElement('style');
+              style.textContent = scopeCssText;
+              this.$.content.shadowRoot.appendChild(style);
+              this._contentNodes.unshift(style);
+            }
+          }
+
+          this.$.content.shadowRoot.appendChild(this._instance.root);
+          this.content = this.$.content.shadowRoot;
+        } else {
+          this.appendChild(this._instance.root);
+          this.content = this;
+        }
       }
 
+      /** @private */
+      _removeNewRendererOrTemplate(template, oldTemplate, renderer, oldRenderer) {
+        if (template !== oldTemplate) {
+          this.template = undefined;
+        } else if (renderer !== oldRenderer) {
+          this.renderer = undefined;
+        }
+      }
+
+      /**
+       * Manually invoke existing renderer.
+       */
+      render() {
+        if (this.renderer) {
+          this.renderer.call(this.owner, this.content, this.owner, this.model);
+        }
+      }
+
+      /** @private */
+      _templateOrRendererChanged(template, renderer, owner, model, instanceProps, opened) {
+        if (template && renderer) {
+          this._removeNewRendererOrTemplate(template, this._oldTemplate, renderer, this._oldRenderer);
+          throw new Error('You should only use either a renderer or a template for overlay content');
+        }
+
+        const ownerOrModelChanged = (this._oldOwner !== owner || this._oldModel !== model);
+        this._oldModel = model;
+        this._oldOwner = owner;
+
+        const templateOrInstancePropsChanged = (this._oldInstanceProps !== instanceProps || this._oldTemplate !== template);
+        this._oldInstanceProps = instanceProps;
+        this._oldTemplate = template;
+
+        const rendererChanged = this._oldRenderer !== renderer;
+        this._oldRenderer = renderer;
+
+        const openedChanged = this._oldOpened !== opened;
+        this._oldOpened = opened;
+
+        if (template && templateOrInstancePropsChanged) {
+          this._stampOverlayTemplate(template, instanceProps);
+        } else if (renderer && (rendererChanged || openedChanged || ownerOrModelChanged)) {
+          this.content = this;
+
+          if (rendererChanged) {
+            while (this.content.firstChild) {
+              this.content.removeChild(this.content.firstChild);
+            }
+          }
+
+          if (opened) {
+            this.render();
+          }
+        }
+      }
+
+      /**
+       * @param {Element} element
+       * @return {boolean}
+       * @protected
+       */
       _isFocused(element) {
         return element && element.getRootNode().activeElement === element;
       }
 
+      /**
+       * @param {Element[]} elements
+       * @return {number}
+       * @protected
+       */
+      _focusedIndex(elements) {
+        elements = elements || this._getFocusableElements();
+        return elements.indexOf(elements.filter(this._isFocused).pop());
+      }
+
+      /**
+       * @param {number} increment
+       * @param {number | undefined} index
+       * @protected
+       */
       _cycleTab(increment, index) {
-        if (!this.focusTrap) {
-          return;
-        }
         const focusableElements = this._getFocusableElements();
 
-        if (!this._isFocused(this._focusedElement)) {
-          this._focusedElement = focusableElements.reduce((prev, e) => {
-            return !prev && e.getRootNode().activeElement === e ? e : prev;
-          }, undefined);
+        if (index === undefined) {
+          index = this._focusedIndex(focusableElements);
         }
 
-        index = index || focusableElements.indexOf(this._focusedElement);
+        index += increment;
 
-        // search for visible elements and select the next possible match
-        for (let i = 0; i < focusableElements.length; i++) {
-          index = index + increment;
-
-          // rollover to first item
-          if (index === focusableElements.length) {
-            index = 0;
-
-          // go to last item
-          } else if (index === -1) {
-            index = focusableElements.length - 1;
-          }
-
-          // determine if element is visible
-          const el = focusableElements[index];
-          this._focusedElement = el;
-          return el.focus();
+        // rollover to first item
+        if (index >= focusableElements.length) {
+          index = 0;
+        // go to last item
+        } else if (index < 0) {
+          index = focusableElements.length - 1;
         }
 
-        // fallback if there are no focusable elements
-        this._focusedElement = this.$.overlay;
-        this.$.overlay.focus();
+        focusableElements[index].focus();
       }
 
+      /**
+       * @return {!Array<!HTMLElement>}
+       * @protected
+       */
       _getFocusableElements() {
         // collect all focusable elements
-        return Polymer.IronFocusablesHelper.getTabbableNodes(this.$.content).
-          filter(element => !element.shadowRoot || Polymer.IronFocusablesHelper.getTabbableNodes(element).length === 0);
+        return Vaadin.FocusablesHelper.getTabbableNodes(this.$.overlay);
       }
 
-      _processPendingMutationObserversFor(node) {
-        if (window.CustomElements && !Polymer.Settings.useNativeCustomElements) {
-          CustomElements.takeRecords(node);
+      /**
+       * @return {!Element}
+       * @protected
+       */
+      _getActiveElement() {
+        let active = document._activeElement || document.activeElement;
+        // document.activeElement can be null
+        // https://developer.mozilla.org/en-US/docs/Web/API/Document/activeElement
+        // In IE 11, it can also be an object when operating in iframes
+        // or document.documentElement (when overlay closed on outside click).
+        // In these cases, default it to document.body.
+        if (!active || active === document.documentElement || active instanceof Element === false) {
+          active = document.body;
         }
+        while (active.shadowRoot && active.shadowRoot.activeElement) {
+          active = active.shadowRoot.activeElement;
+        }
+        return active;
       }
+
+      /**
+       * @param {!Node} node
+       * @return {boolean}
+       * @protected
+       */
+      _deepContains(node) {
+        if (this.contains(node)) {
+          return true;
+        }
+        let n = node;
+        const doc = node.ownerDocument;
+        // walk from node to `this` or `document`
+        while (n && n !== doc && n !== this) {
+          n = n.parentNode || n.host;
+        }
+        return n === this;
+      }
+
+      /**
+       * Brings the overlay as visually the frontmost one
+       */
+      bringToFront() {
+        let zIndex = '';
+        const frontmost = OverlayElement.__attachedInstances.filter(o => o !== this).pop();
+        if (frontmost) {
+          const frontmostZIndex = frontmost.__zIndex;
+          zIndex = frontmostZIndex + 1;
+        }
+        this.style.zIndex = zIndex;
+        this.__zIndex = zIndex || parseFloat(getComputedStyle(this).zIndex);
+      }
+
     }
 
     customElements.define(OverlayElement.is, OverlayElement);
-
     /**
      * @namespace Vaadin
      */
-    window.Vaadin = window.Vaadin || {};
-    Vaadin.OverlayElement = OverlayElement;
+    window.Vaadin.OverlayElement = OverlayElement;
   })();
 </script>
-

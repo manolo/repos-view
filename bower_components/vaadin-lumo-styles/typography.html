@@ -1,5 +1,6 @@
 <link rel="import" href="version.html">
 <link rel="import" href="../polymer/lib/elements/custom-style.html">
+<link rel="import" href="../polymer/lib/elements/dom-module.html">
 
 <custom-style>
   <style>
@@ -102,7 +103,8 @@
         letter-spacing: 0.03em;
       }
 
-      p {
+      p,
+      blockquote {
         margin-top: 0.5em;
         margin-bottom: 0.75em;
       }
@@ -121,9 +123,26 @@
         height: 1px;
         border: 0;
         padding: 0;
-        margin: var(--lumo-space-s) calc(var(--lumo-border-radius) / 2);
+        margin: var(--lumo-space-s) calc(var(--lumo-border-radius-m) / 2);
         background-color: var(--lumo-contrast-10pct);
       }
+
+      blockquote {
+        border-left: 2px solid var(--lumo-contrast-30pct);
+      }
+
+      b,
+      strong {
+        font-weight: 600;
+      }
+
+      /* RTL specific styles */
+
+      blockquote[dir="rtl"] {
+        border-left: none;
+        border-right: 2px solid var(--lumo-contrast-30pct);
+      }
+
     </style>
   </template>
 </dom-module>

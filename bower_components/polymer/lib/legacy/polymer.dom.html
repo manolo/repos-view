@@ -282,7 +282,7 @@ subject to an additional IP rights grant found at http://polymer.github.io/PATEN
 
     /**
      * Returns the `composedPath` for this event.
-     * @return {!Array<EventTarget>} The nodes this event propagated through
+     * @return {!Array<!EventTarget>} The nodes this event propagated through
      */
     get path() {
       return this.event.composedPath();
@@ -398,7 +398,7 @@ subject to an additional IP rights grant found at http://polymer.github.io/PATEN
    * This method facades to `Polymer.enqueueDebouncer`.
    *
    * @memberof Polymer.dom
-   * @param {Polymer.Debouncer} debouncer Debouncer to enqueue
+   * @param {!Polymer.Debouncer} debouncer Debouncer to enqueue
    */
   Polymer.dom.addDebouncer = Polymer.enqueueDebouncer;
 })();

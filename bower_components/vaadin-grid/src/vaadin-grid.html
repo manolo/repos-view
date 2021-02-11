@@ -7,22 +7,23 @@ This program is available under Apache License Version 2.0, available at https:/
 <link rel="import" href="../../polymer/polymer.html">
 <link rel="import" href="../../vaadin-themable-mixin/vaadin-themable-mixin.html">
 <link rel="import" href="vaadin-grid-scroller.html">
-<link rel="import" href="vaadin-grid-dynamic-columns-mixin.html">
-<link rel="import" href="vaadin-grid-data-provider-mixin.html">
-<link rel="import" href="vaadin-grid-array-data-provider-mixin.html">
-<link rel="import" href="vaadin-grid-cell-click-mixin.html">
+<link rel="import" href="vaadin-grid-a11y-mixin.html">
 <link rel="import" href="vaadin-grid-active-item-mixin.html">
+<link rel="import" href="vaadin-grid-array-data-provider-mixin.html">
+<link rel="import" href="vaadin-grid-column-resizing-mixin.html">
+<link rel="import" href="vaadin-grid-data-provider-mixin.html">
+<link rel="import" href="vaadin-grid-dynamic-columns-mixin.html">
+<link rel="import" href="vaadin-grid-event-context-mixin.html">
+<link rel="import" href="vaadin-grid-filter-mixin.html">
+<link rel="import" href="vaadin-grid-row-details-mixin.html">
 <link rel="import" href="vaadin-grid-scroll-mixin.html">
 <link rel="import" href="vaadin-grid-selection-mixin.html">
 <link rel="import" href="vaadin-grid-sort-mixin.html">
-<link rel="import" href="vaadin-grid-row-details-mixin.html">
+<link rel="import" href="vaadin-grid-styling-mixin.html">
+<link rel="import" href="vaadin-grid-drag-and-drop-mixin.html">
 <link rel="import" href="vaadin-grid-keyboard-navigation-mixin.html">
-<link rel="import" href="vaadin-grid-a11y-mixin.html">
-<link rel="import" href="vaadin-grid-filter-mixin.html">
 <link rel="import" href="vaadin-grid-column-reordering-mixin.html">
-<link rel="import" href="vaadin-grid-column-resizing-mixin.html">
 <link rel="import" href="vaadin-grid-column.html">
-<link rel="import" href="vaadin-grid-outer-scroller.html">
 <link rel="import" href="vaadin-grid-styles.html">
 <link rel="import" href="../../vaadin-element-mixin/vaadin-element-mixin.html">
 
@@ -31,30 +32,20 @@ This program is available under Apache License Version 2.0, available at https:/
     <style include="vaadin-grid-styles"></style>
 
     <div id="scroller"
-      no-scrollbars$="[[!_scrollbarWidth]]"
-      wheel-scrolling$="[[_wheelScrolling]]"
       safari$="[[_safari]]"
       ios$="[[_ios]]"
-      loading$=[[loading]]
-      edge$="[[_edge]]"
-      firefox$="[[_firefox]]"
       ie$="[[_ie]]"
+      loading$=[[loading]]
       column-reordering-allowed$="[[columnReorderingAllowed]]">
 
       <table id="table" role="grid" aria-multiselectable="true" tabindex="0">
-        <caption id="fixedsizer" class="sizer" part="row"></caption>
+        <caption id="sizer" part="row"></caption>
         <thead id="header" role="rowgroup"></thead>
         <tbody id="items" role="rowgroup"></tbody>
         <tfoot id="footer" role="rowgroup"></tfoot>
       </table>
 
       <div part="reorder-ghost"></div>
-      <vaadin-grid-outer-scroller id="outerscroller"
-          scroll-target="[[scrollTarget]]"
-          scroll-handler="[[_this]]"
-          no-scrollbars="[[!_scrollbarWidth]]">
-        <div id="outersizer" class="sizer" part="row"></div>
-      </vaadin-grid-outer-scroller>
     </div>
 
     <!-- The template needs at least one slot or else shady doesn't distribute -->
@@ -66,14 +57,89 @@ This program is available under Apache License Version 2.0, available at https:/
 
 <script>
   (function() {
+
+    const TOUCH_DEVICE = (() => {
+      try {
+        document.createEvent('TouchEvent');
+        return true;
+      } catch (e) {
+        return false;
+      }
+    })();
+
     /**
-     * `<vaadin-grid>` is a free, high quality data grid / data table Polymer element.
+     *
+     * `<vaadin-grid>` is a free, high quality data grid / data table Web Component. The content of the
+     * the grid can be populated in two ways: imperatively by using renderer callback function and
+     * declaratively by using Polymer's Templates.
      *
      * ### Quick Start
      *
-     * Use the [`<vaadin-grid-column>`](#/elements/vaadin-grid-column) element to configure the grid columns.
+     * Start with an assigning an array to the [`items`](#/elements/vaadin-grid#property-items) property to visualize your data.
      *
-     * Then assign an array to the [`items`](#/elements/vaadin-grid#property-items) property to visualize your data.
+     * Use the [`<vaadin-grid-column>`](#/elements/vaadin-grid-column) element to configure the grid columns. Set `path` and `header`
+     * shorthand properties for the columns to define what gets rendered in the cells of the column.
+     *
+     * #### Example:
+     * ```html
+     * <vaadin-grid>
+     *   <vaadin-grid-column path="name.first" header="First name"></vaadin-grid-column>
+     *   <vaadin-grid-column path="name.last" header="Last name"></vaadin-grid-column>
+     *   <vaadin-grid-column path="email"></vaadin-grid-column>
+     * </vaadin-grid>
+     * ```
+     *
+     * For custom content `vaadin-grid-column` element provides you with three types of `renderer` callback functions: `headerRenderer`,
+     * `renderer` and `footerRenderer`.
+     *
+     * Each of those renderer functions provides `root`, `column`, `model` arguments when applicable.
+     * Generate DOM content, append it to the `root` element and control the state
+     * of the host element by accessing `column`. Before generating new content,
+     * users are able to check if there is already content in `root` for reusing it.
+     *
+     * Renderers are called on initialization of new column cells and each time the
+     * related row model is updated. DOM generated during the renderer call can be reused
+     * in the next renderer call and will be provided with the `root` argument.
+     * On first call it will be empty.
+     *
+     * #### Example:
+     * ```html
+     * <vaadin-grid>
+     *   <vaadin-grid-column></vaadin-grid-column>
+     *   <vaadin-grid-column></vaadin-grid-column>
+     *   <vaadin-grid-column></vaadin-grid-column>
+     * </vaadin-grid>
+     * ```
+     * ```js
+     * const grid = document.querySelector('vaadin-grid');
+     * grid.items = [{'name': 'John', 'surname': 'Lennon', 'role': 'singer'},
+     *               {'name': 'Ringo', 'surname': 'Starr', 'role': 'drums'}];
+     *
+     * const columns = grid.querySelectorAll('vaadin-grid-column');
+     *
+     * columns[0].headerRenderer = function(root) {
+     *   root.textContent = 'Name';
+     * };
+     * columns[0].renderer = function(root, column, model) {
+     *   root.textContent = model.item.name;
+     * };
+     *
+     * columns[1].headerRenderer = function(root) {
+     *   root.textContent = 'Surname';
+     * };
+     * columns[1].renderer = function(root, column, model) {
+     *   root.textContent = model.item.surname;
+     * };
+     *
+     * columns[2].headerRenderer = function(root) {
+     *   root.textContent = 'Role';
+     * };
+     * columns[2].renderer = function(root, column, model) {
+     *   root.textContent = model.item.role;
+     * };
+     * ```
+     *
+     * Alternatively, the content can be provided with Polymer's Templates:
      *
      * #### Example:
      * ```html
@@ -195,33 +261,45 @@ This program is available under Apache License Version 2.0, available at https:/
      * `navigating` | Keyboard navigation in navigation mode | :host
      * `overflow` | Set when rows are overflowing the grid viewport. Possible values: `top`, `bottom`, `left`, `right` | :host
      * `reordering` | Set when the grid's columns are being reordered | :host
+     * `dragover` | Set when the grid (not a specific row) is dragged over | :host
+     * `dragging-rows` : Set when grid rows are dragged  | :host
      * `reorder-status` | Reflects the status of a cell while columns are being reordered | cell
      * `frozen` | Frozen cell | cell
      * `last-frozen` | Last frozen cell | cell
+   * * `first-column` | First visible cell on a row | cell
      * `last-column` | Last visible cell on a row | cell
      * `selected` | Selected row | row
      * `expanded` | Expanded row | row
+     * `details-opened` | Row with details open | row
      * `loading` | Row that is waiting for data from data provider | row
      * `odd` | Odd row | row
      * `first` | The first body row | row
+     * `dragstart` | Set for one frame when drag of a row is starting. The value is a number when multiple rows are dragged | row
+     * `dragover` | Set when the row is dragged over | row
+     * `drag-disabled` | Set to a row that isn't available for dragging | row
+     * `drop-disabled` | Set to a row that can't be dropped on top of | row
      *
      * See [ThemableMixin – how to apply styles for shadow parts](https://github.com/vaadin/vaadin-themable-mixin/wiki)
      *
      * @memberof Vaadin
+     * @extends Vaadin.Grid.ScrollerElement
      * @mixes Vaadin.ThemableMixin
-     * @mixes Vaadin.Grid.DataProviderMixin
-     * @mixes Vaadin.Grid.ArrayDataProviderMixin
-     * @mixes Vaadin.Grid.DynamicColumnsMixin
-     * @mixes Vaadin.Grid.CellClickMixin
+     * @mixes Vaadin.Grid.A11yMixin
      * @mixes Vaadin.Grid.ActiveItemMixin
+     * @mixes Vaadin.Grid.ArrayDataProviderMixin
+     * @mixes Vaadin.Grid.ColumnResizingMixin
+     * @mixes Vaadin.Grid.DataProviderMixin
+     * @mixes Vaadin.Grid.DynamicColumnsMixin
+     * @mixes Vaadin.Grid.FilterMixin
+     * @mixes Vaadin.Grid.RowDetailsMixin
      * @mixes Vaadin.Grid.ScrollMixin
      * @mixes Vaadin.Grid.SelectionMixin
      * @mixes Vaadin.Grid.SortMixin
-     * @mixes Vaadin.Grid.RowDetailsMixin
      * @mixes Vaadin.Grid.KeyboardNavigationMixin
-     * @mixes Vaadin.Grid.FilterMixin
      * @mixes Vaadin.Grid.ColumnReorderingMixin
-     * @mixes Vaadin.Grid.ColumnResizingMixin
+     * @mixes Vaadin.Grid.EventContextMixin
+     * @mixes Vaadin.Grid.StylingMixin
+     * @mixes Vaadin.Grid.DragAndDropMixin
      * @demo demo/index.html
      */
     class GridElement extends
@@ -230,25 +308,27 @@ This program is available under Apache License Version 2.0, available at https:/
           Vaadin.Grid.DataProviderMixin(
             Vaadin.Grid.ArrayDataProviderMixin(
               Vaadin.Grid.DynamicColumnsMixin(
-                Vaadin.Grid.CellClickMixin(
-                  Vaadin.Grid.ActiveItemMixin(
-                    Vaadin.Grid.ScrollMixin(
-                      Vaadin.Grid.SelectionMixin(
-                        Vaadin.Grid.SortMixin(
-                          Vaadin.Grid.RowDetailsMixin(
-                            Vaadin.Grid.KeyboardNavigationMixin(
-                              Vaadin.Grid.A11yMixin(
-                                Vaadin.Grid.FilterMixin(
-                                  Vaadin.Grid.ColumnReorderingMixin(
-                                    Vaadin.Grid.ColumnResizingMixin(
-                                      Vaadin.Grid.ScrollerElement)))))))))))))))) {
+                Vaadin.Grid.ActiveItemMixin(
+                  Vaadin.Grid.ScrollMixin(
+                    Vaadin.Grid.SelectionMixin(
+                      Vaadin.Grid.SortMixin(
+                        Vaadin.Grid.RowDetailsMixin(
+                          Vaadin.Grid.KeyboardNavigationMixin(
+                            Vaadin.Grid.A11yMixin(
+                              Vaadin.Grid.FilterMixin(
+                                Vaadin.Grid.ColumnReorderingMixin(
+                                  Vaadin.Grid.ColumnResizingMixin(
+                                    Vaadin.Grid.EventContextMixin(
+                                      Vaadin.Grid.DragAndDropMixin(
+                                        Vaadin.Grid.StylingMixin(
+                                          Vaadin.Grid.ScrollerElement)))))))))))))))))) {
 
       static get is() {
         return 'vaadin-grid';
       }
 
       static get version() {
-        return '5.0.0-beta3';
+        return '5.7.7';
       }
 
       static get observers() {
@@ -259,51 +339,68 @@ This program is available under Apache License Version 2.0, available at https:/
 
       static get properties() {
         return {
-
-          _this: {
-            type: Object,
-            value: function() {
-              return this;
-            }
-          },
-
+          /** @private */
           _safari: {
             type: Boolean,
             value: /^((?!chrome|android).)*safari/i.test(navigator.userAgent)
           },
 
+          /** @private */
           _ios: {
             type: Boolean,
-            value: /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream
+            value: (/iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream)
+              || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1)
           },
 
+          /** @private */
           _edge: {
             type: Boolean,
             value: typeof CSS !== 'undefined' && CSS.supports('(-ms-ime-align:auto)')
           },
 
+          /** @private */
           _ie: {
             type: Boolean,
             value: !!(navigator.userAgent.match(/Trident/) && !navigator.userAgent.match(/MSIE/))
           },
 
+          /** @private */
           _firefox: {
             type: Boolean,
             value: navigator.userAgent.toLowerCase().indexOf('firefox') > -1
           },
 
+          /** @private */
           _android: {
             type: Boolean,
             value: /android/i.test(navigator.userAgent)
           },
 
+          /** @private */
+          _touchDevice: {
+            type: Boolean,
+            value: TOUCH_DEVICE
+          },
+
           /**
-           * If true, the grid's height is defined by the number of its rows.
+           * If true, the grid's height is defined by its rows.
+           *
+           * Effectively, this disables the grid's virtual scrolling so that all the rows are rendered in the DOM at once.
+           * If the grid has a large number of items, using the feature is discouraged to avoid performance issues.
+           * @attr {boolean} height-by-rows
+           * @type {boolean}
            */
           heightByRows: {
             type: Boolean,
             value: false,
-            reflectToAttribute: true
+            reflectToAttribute: true,
+            observer: '_heightByRowsChanged'
+          },
+
+          /** @private */
+          _recalculateColumnWidthOnceLoadingFinished: {
+            type: Boolean,
+            value: true
           }
         };
       }
@@ -313,6 +410,91 @@ This program is available under Apache License Version 2.0, available at https:/
         this.addEventListener('animationend', this._onAnimationEnd);
       }
 
+      /** @protected */
+      connectedCallback() {
+        super.connectedCallback();
+        this.recalculateColumnWidths();
+      }
+
+      /**
+       * @param {string} name
+       * @param {?string} oldValue
+       * @param {?string} newValue
+       * @protected
+       */
+      attributeChangedCallback(name, oldValue, newValue) {
+        super.attributeChangedCallback(name, oldValue, newValue);
+        if (name === 'dir') {
+          this.__isRTL = newValue === 'rtl';
+          this._updateScrollerMeasurements();
+        }
+      }
+
+      /** @private */
+      __hasRowsWithClientHeight() {
+        return !!Array.from(this.$.items.children).filter(row => row.clientHeight).length;
+      }
+
+      /** @protected */
+      __itemsReceived() {
+        if (this._recalculateColumnWidthOnceLoadingFinished
+          && !this._cache.isLoading()
+          && this.__hasRowsWithClientHeight()) {
+          this._recalculateColumnWidthOnceLoadingFinished = false;
+          this.recalculateColumnWidths();
+        }
+      }
+
+      /**
+       * @param {!Array<!GridColumnElement>} cols the columns to auto size based on their content width
+       * @private
+       */
+      _recalculateColumnWidths(cols) {
+        // Note: The `cols.forEach()` loops below could be implemented as a single loop but this has been
+        // split for performance reasons to batch these similar actions [write/read] together to avoid
+        // unnecessary layout trashing.
+
+        // [write] Set automatic width for all cells (breaks column alignment)
+        cols.forEach(col => {
+          col.width = 'auto';
+          col._origFlexGrow = col.flexGrow;
+          col.flexGrow = 0;
+        });
+        // [read] Measure max cell width in each column
+        cols.forEach(col => {
+          col._currentWidth = 0;
+          // Note: _allCells only contains cells which are currently rendered in DOM
+          col._allCells.forEach(c => {
+            // Add 1px buffer to the offset width to avoid too narrow columns (sub-pixel rendering)
+            const cellWidth = c.offsetWidth + 1;
+            col._currentWidth = Math.max(col._currentWidth, cellWidth);
+          });
+        });
+        // [write] Set column widths to fit widest measured content
+        cols.forEach(col => {
+          col.width = `${col._currentWidth}px`;
+          col.flexGrow = col._origFlexGrow;
+          col._currentWidth = undefined;
+          col._origFlexGrow = undefined;
+        });
+      }
+
+      /**
+       * Updates the `width` of all columns which have `autoWidth` set to `true`.
+       */
+      recalculateColumnWidths() {
+        if (!this._columnTree) {
+          return; // No columns
+        }
+        if (this._cache.isLoading()) {
+          this._recalculateColumnWidthOnceLoadingFinished = true;
+        } else {
+          const cols = this._getColumns().filter(col => !col.hidden && col.autoWidth);
+          this._recalculateColumnWidths(cols);
+        }
+      }
+
+      /** @private */
       _createScrollerRows(count) {
         const rows = [];
         for (var i = 0; i < count; i++) {
@@ -326,20 +508,22 @@ This program is available under Apache License Version 2.0, available at https:/
         }
 
         if (this._columnTree) {
-          this._columnTree[this._columnTree.length - 1].forEach(c => c.notifyPath('_cells.*', c._cells));
+          this._columnTree[this._columnTree.length - 1].forEach(c => c.notifyPath && c.notifyPath('_cells.*', c._cells));
         }
 
         Polymer.RenderStatus.beforeNextRender(this, () => {
-          this._updateLastColumn();
+          this._updateFirstAndLastColumn();
           this._resetKeyboardNavigation();
         });
         return rows;
       }
 
+      /** @private */
       _getRowTarget() {
         return this.$.items;
       }
 
+      /** @private */
       _createCell(tagName) {
         const contentId = this._contentIndex = this._contentIndex + 1 || 0;
         const slotName = 'vaadin-grid-cell-content-' + contentId;
@@ -387,6 +571,14 @@ This program is available under Apache License Version 2.0, available at https:/
         return cell;
       }
 
+      /**
+       * @param {!HTMLTableRowElement} row
+       * @param {!Array<!GridColumnElement>} columns
+       * @param {?string} section
+       * @param {boolean} isColumnRow
+       * @param {boolean} noNotify
+       * @protected
+       */
       _updateRow(row, columns, section, isColumnRow, noNotify) {
         section = section || 'body';
 
@@ -394,77 +586,125 @@ This program is available under Apache License Version 2.0, available at https:/
 
         Array.from(row.children).forEach(cell => cell._vacant = true);
         row.innerHTML = '';
-        if (row.id !== 'outersizer' && row.id !== 'fixedsizer') {
+        if (row.id !== 'sizer') {
           row.hidden = true;
         }
-        columns.forEach((column, index) => {
-          let cell;
+        columns
+          .filter(column => !column.hidden)
+          .forEach((column, index, cols) => {
+            let cell;
 
-          if (section === 'body') {
+            if (section === 'body') {
             // Body
-            column._cells = column._cells || [];
-            cell = column._cells.filter(cell => cell._vacant)[0];
-            if (!cell) {
-              cell = this._createCell('td');
-              column._cells.push(cell);
-            }
-            cell.setAttribute('part', 'cell body-cell');
-            row.appendChild(cell);
+              column._cells = column._cells || [];
+              cell = column._cells.filter(cell => cell._vacant)[0];
+              if (!cell) {
+                cell = this._createCell('td');
+                column._cells.push(cell);
+              }
+              cell.setAttribute('part', 'cell body-cell');
+              row.appendChild(cell);
 
-            if (index === columns.length - 1 && this._rowDetailsTemplate) {
+              if (index === cols.length - 1 && (this._rowDetailsTemplate || this.rowDetailsRenderer)) {
               // Add details cell as last cell to body rows
-              this._detailsCells = this._detailsCells || [];
-              const detailsCell = this._detailsCells.filter(cell => cell._vacant)[0] || this._createCell('td');
-              if (this._detailsCells.indexOf(detailsCell) === -1) {
-                this._detailsCells.push(detailsCell);
+                this._detailsCells = this._detailsCells || [];
+                const detailsCell = this._detailsCells.filter(cell => cell._vacant)[0] || this._createCell('td');
+                if (this._detailsCells.indexOf(detailsCell) === -1) {
+                  this._detailsCells.push(detailsCell);
+                }
+                if (!detailsCell._content.parentElement) {
+                  contentsFragment.appendChild(detailsCell._content);
+                }
+                this._configureDetailsCell(detailsCell);
+                row.appendChild(detailsCell);
+                this._a11ySetRowDetailsCell(row, detailsCell);
+                detailsCell._vacant = false;
               }
-              if (!detailsCell._content.parentElement) {
-                contentsFragment.appendChild(detailsCell._content);
-              }
-              this._configureDetailsCell(detailsCell);
-              row.appendChild(detailsCell);
-              this._a11ySetRowDetailsCell(row, detailsCell);
-              detailsCell._vacant = false;
-            }
 
-            if (column.notifyPath && !noNotify) {
-              column.notifyPath('_cells.*', column._cells);
-            }
-          } else {
-            // Header & footer
-            const tagName = section === 'header' ? 'th' : 'td';
-            if (isColumnRow || column.localName === 'vaadin-grid-column-group') {
-              cell = column[`_${section}Cell`] || this._createCell(tagName);
-              row.appendChild(cell);
-              if (cell._instance) {
-                row.hidden = false;
+              if (column.notifyPath && !noNotify) {
+                column.notifyPath('_cells.*', column._cells);
               }
-              column[`_${section}Cell`] = cell;
             } else {
-              column._emptyCells = column._emptyCells || [];
-              cell = column._emptyCells.filter(cell => cell._vacant)[0] || this._createCell(tagName);
-              row.appendChild(cell);
-              if (column._emptyCells.indexOf(cell) === -1) {
-                column._emptyCells.push(cell);
+            // Header & footer
+              const tagName = section === 'header' ? 'th' : 'td';
+              if (isColumnRow || column.localName === 'vaadin-grid-column-group') {
+                cell = column[`_${section}Cell`] || this._createCell(tagName);
+                cell._column = column;
+                row.appendChild(cell);
+                column[`_${section}Cell`] = cell;
+              } else {
+                column._emptyCells = column._emptyCells || [];
+                cell = column._emptyCells.filter(cell => cell._vacant)[0] || this._createCell(tagName);
+                cell._column = column;
+                row.appendChild(cell);
+                if (column._emptyCells.indexOf(cell) === -1) {
+                  column._emptyCells.push(cell);
+                }
               }
+              cell.setAttribute('part', `cell ${section}-cell`);
+              this.__updateHeaderFooterRowVisibility(row);
             }
-            cell.setAttribute('part', `cell ${section}-cell`);
-          }
 
-          if (!cell._content.parentElement) {
-            contentsFragment.appendChild(cell._content);
-          }
-          cell._vacant = false;
-          cell._column = column;
-        });
+            if (!cell._content.parentElement) {
+              contentsFragment.appendChild(cell._content);
+            }
+            cell._vacant = false;
+            cell._column = column;
+          });
 
         // Might be empty if only cache was used
         this.appendChild(contentsFragment);
 
         this._frozenCellsChanged();
-        this._updateLastColumn();
+        this._updateFirstAndLastColumnForRow(row);
       }
 
+      /**
+       * @param {HTMLTableRowElement} row
+       * @protected
+       */
+      __updateHeaderFooterRowVisibility(row) {
+        if (!row) {
+          return;
+        }
+
+        const visibleRowCells = Array.from(row.children).filter(cell => {
+          const column = cell._column;
+          if (column._emptyCells && column._emptyCells.indexOf(cell) > -1) {
+            // The cell is an "empty cell"  -> doesn't block hiding the row
+            return false;
+          }
+          if (row.parentElement === this.$.header) {
+            if (column.headerRenderer || column._headerTemplate) {
+              // The cell is the header cell of a column that has a header renderer
+              // or a header template -> row should be visible
+              return true;
+            }
+            if (column.header === null) {
+              // The column header is explicilty set to null -> doesn't block hiding the row
+              return false;
+            }
+            if (column.path || column.header !== undefined) {
+              // The column has an explicit non-null header or a path that generates a header
+              // -> row should be visible
+              return true;
+            }
+          } else {
+            if (column.footerRenderer || column._footerTemplate) {
+              // The cell is the footer cell of a column that has a footer renderer
+              // or a footer template -> row should be visible
+              return true;
+            }
+          }
+        });
+
+        if (row.hidden !== !visibleRowCells.length) {
+          row.hidden = !visibleRowCells.length;
+          this.notifyResize();
+        }
+      }
+
+      /** @private */
       _updateScrollerItem(row, index) {
         this._preventScrollerRotatingCellFocus(row, index);
 
@@ -472,19 +712,24 @@ This program is available under Apache License Version 2.0, available at https:/
           return;
         }
 
-        Array.from(row.children).forEach(cell => {
-          if (cell._instance) {
-            cell._instance.index = index;
-          }
-        });
         this._toggleAttribute('first', index === 0, row);
         this._toggleAttribute('odd', index % 2, row);
         this._a11yUpdateRowRowindex(row, index);
         this._getItem(index, row);
       }
 
+      /** @private */
       _columnTreeChanged(columnTree, splices) {
-        Array.from(this.$.items.children).forEach(row => this._updateRow(row, columnTree[columnTree.length - 1]));
+        this._renderColumnTree(columnTree);
+        this.recalculateColumnWidths();
+      }
+
+      /**
+       * @param {!Array<!GridColumnElement>} columnTree
+       * @protected
+       */
+      _renderColumnTree(columnTree) {
+        Array.from(this.$.items.children).forEach((row) => this._updateRow(row, columnTree[columnTree.length - 1], null, false, true));
 
         while (this.$.header.children.length < columnTree.length) {
           const headerRow = document.createElement('tr');
@@ -509,36 +754,71 @@ This program is available under Apache License Version 2.0, available at https:/
           .forEach((footerRow, index) => this._updateRow(footerRow, columnTree[columnTree.length - 1 - index], 'footer', index === 0));
 
         // Sizer rows
-        this._updateRow(this.$.outersizer, columnTree[columnTree.length - 1]);
-        this._updateRow(this.$.fixedsizer, columnTree[columnTree.length - 1]);
+        this._updateRow(this.$.sizer, columnTree[columnTree.length - 1]);
 
         this._resizeHandler();
         this._frozenCellsChanged();
-        this._updateLastColumn();
+        this._updateFirstAndLastColumn();
         this._resetKeyboardNavigation();
         this._a11yUpdateHeaderRows();
         this._a11yUpdateFooterRows();
+        this.__updateFooterPositioning();
       }
 
+      __updateFooterPositioning() {
+        if (this._firefox) {
+          // Sticky (or translated) footer in a flexbox host doesn't get included in
+          // the scroll height calculation on FF. This is a workaround for the issue.
+          this.$.items.style.paddingBottom = 0;
+          if (!this.heightByRows) {
+            this.$.items.style.paddingBottom = `${this.$.footer.offsetHeight}px`;
+          }
+        }
+
+        if (this._ios) {
+          const isOldIOS = !window.CSS.supports('position', 'sticky');
+          if (isOldIOS) {
+            // Due to a rendering bug, the sticky header may disappear on an older iOS (10-12) Safari
+            // if the grid is used inside of a flex box. This is a workaround for the issue.
+            this.$.table.style.height = '';
+            this.$.table.style.minHeight = '100%';
+            this.$.table.style.maxHeight = '100%';
+            setTimeout(() => this.$.table.style.height = `${this.$.scroller.offsetHeight}px`);
+          }
+        }
+      }
+
+      /**
+       * @param {!HTMLElement} row
+       * @param {GridItem} item
+       * @protected
+       */
       _updateItem(row, item) {
         row._item = item;
-        Array.from(row.children).forEach(cell => {
-          if (cell._instance) {
-            if (this._itemsEqual(cell._instance.item, item)) {
-              // Force data system to pick up subproperty changes
-              cell._instance._setPendingProperty('item', {}, false);
-            }
-            cell._instance.item = item;
-            cell._instance.index = row.index;
-          }
-        });
-        this._toggleRowSelected(row, this._isSelected(item));
-        this._toggleRowDetailsOpened(row, this._rowDetailsTemplate && this._isDetailsOpened(item));
-        this._toggleRowExpanded(row, this._isExpanded(item));
-        this._updateRowLevel(row, this._getIndexLevel(row.index));
-        if (this._rowDetailsTemplate) {
+        const model = this.__getRowModel(row);
+
+        this._toggleAttribute('selected', model.selected, row);
+        this._a11yUpdateRowSelected(row, model.selected);
+        this._a11yUpdateRowLevel(row, model.level);
+        this._toggleAttribute('expanded', model.expanded, row);
+        if (this._rowDetailsTemplate || this.rowDetailsRenderer) {
           this._toggleDetailsCell(row, item);
         }
+        this._generateCellClassNames(row, model);
+        this._filterDragAndDrop(row, model);
+
+        Array.from(row.children).forEach(cell => {
+          if (cell._renderer) {
+            const owner = cell._column || this;
+            cell._renderer.call(owner, cell._content, owner, model);
+          } else if (cell._instance) {
+            cell._instance.__detailsOpened__ = model.detailsOpened;
+            cell._instance.__selected__ = model.selected;
+            cell._instance.__level__ = model.level;
+            cell._instance.__expanded__ = model.expanded;
+            cell._instance.setProperties(model);
+          }
+        });
 
         this._debouncerUpdateHeights = Polymer.Debouncer.debounce(this._debouncerUpdateHeights,
           Polymer.Async.timeOut.after(1), () => {
@@ -549,96 +829,106 @@ This program is available under Apache License Version 2.0, available at https:/
         );
       }
 
-      _toggleRowDetailsOpened(row, detailsOpened) {
-        Array.from(row.children).forEach(cell => {
-          if (cell._instance) {
-            cell._instance.__detailsOpened__ = detailsOpened;
-            cell._instance.detailsOpened = detailsOpened;
-          }
-        });
-        this._a11yUpdateRowDetailsOpened(row, detailsOpened);
-      }
-
-      _toggleRowSelected(row, selected) {
-        Array.from(row.children).forEach(cell => {
-          if (cell._instance) {
-            cell._instance.__selected__ = selected;
-            cell._instance.selected = selected;
-          }
-        });
-        this._toggleAttribute('selected', selected, row);
-        this._a11yUpdateRowSelected(row, selected);
-      }
-
-      _updateRowLevel(row, level) {
-        Array.from(row.children).forEach(cell => {
-          if (cell._instance) {
-            cell._instance.__level__ = level;
-            cell._instance.level = level;
-          }
-        });
-        this._a11yUpdateRowLevel(row, level);
-      }
-
-      _toggleRowExpanded(row, expanded) {
-        Array.from(row.children).forEach(cell => {
-          if (cell._instance) {
-            cell._instance.__expanded__ = expanded;
-            cell._instance.expanded = expanded;
-          }
-        });
-        this._toggleAttribute('expanded', expanded, row);
-      }
-
+      /** @private */
       _resizeHandler() {
         this._updateDetailsCellHeights();
         this._accessIronListAPI(super._resizeHandler, true);
-        this._updateHeaderFooterMetrics();
+        this._updateScrollerMeasurements();
+        this.__updateFooterPositioning();
       }
 
-      _updateHeaderFooterMetrics() {
-        const headerHeight = this.$.header.clientHeight + 'px';
-        const footerHeight = this.$.footer.clientHeight + 'px';
-        [this.$.outersizer, this.$.fixedsizer, this.$.items].forEach(element => {
-          element.style.borderTopWidth = headerHeight;
-          element.style.borderBottomWidth = footerHeight;
-        });
-
-        Polymer.RenderStatus.afterNextRender(this.$.header, () => {
-          if (this._pendingScrollToIndex) {
-            this._scrollToIndex(this._pendingScrollToIndex);
-          }
-        });
-      }
-
+      /** @private */
       _onAnimationEnd(e) {
         // ShadyCSS applies scoping suffixes to animation names
         if (e.animationName.indexOf('vaadin-grid-appear') === 0) {
           this._render();
-          this._updateHeaderFooterMetrics();
           e.stopPropagation();
+          this.notifyResize();
+          this.__itemsReceived();
+
+          requestAnimationFrame(() => {
+            this.__scrollToPendingIndex();
+            // This needs to be set programmatically in order to avoid an iOS 10 bug (disappearing grid)
+            this.$.table.style.webkitOverflowScrolling = 'touch';
+          });
+        }
+      }
+
+      /**
+       * @param {string} name
+       * @param {boolean} bool
+       * @param {!Element} node
+       * @protected
+       */
+      _toggleAttribute(name, bool, node) {
+        if (node.hasAttribute(name) === !bool) {
+          if (bool) {
+            node.setAttribute(name, '');
+          } else {
+            node.removeAttribute(name);
+          }
+        }
+      }
+
+      /**
+       * @param {!HTMLTableRowElement} row
+       * @return {!GridItemModel}
+       * @protected
+       */
+      __getRowModel(row) {
+        return {
+          index: row.index,
+          item: row._item,
+          level: this._getIndexLevel(row.index),
+          expanded: this._isExpanded(row._item),
+          selected: this._isSelected(row._item),
+          detailsOpened:
+            !!(this._rowDetailsTemplate || this.rowDetailsRenderer) && this._isDetailsOpened(row._item)
+        };
+      }
+
+      /**
+       * Manually invoke existing renderers for all the columns
+       * (header, footer and body cells) and opened row details.
+       */
+      render() {
+        if (this._columnTree) {
+          // header and footer renderers
+          this._columnTree.forEach(level => {
+            level.forEach(column => column._renderHeaderAndFooter());
+          });
+
+          // body and row details renderers
+          this._update();
+        }
+      }
+
+      /**
+       * Updates the computed metrics and positioning of internal grid parts
+       * (row/details cell positioning etc). Needs to be invoked whenever the sizing of grid
+       * content changes asynchronously to ensure consistent appearance (e.g. when a
+       * contained image whose bounds aren't known beforehand finishes loading).
+       */
+      notifyResize() {
+        super.notifyResize();
+      }
+
+      /** @private */
+      _heightByRowsChanged(value, oldValue) {
+        if (value || oldValue) {
           this.notifyResize();
         }
       }
 
-      _toggleAttribute(name, bool, node) {
-        if (bool) {
-          node.setAttribute(name, '');
-        } else {
-          node.removeAttribute(name);
-        }
+      /** @protected */
+      __forceReflow() {
+        this._debouncerForceReflow = Polymer.Debouncer.debounce(this._debouncerForceReflow,
+          Polymer.Async.animationFrame, () => {
+            this.$.scroller.style.overflow = 'hidden';
+            setTimeout(() => this.$.scroller.style.overflow = '');
+          }
+        );
       }
-
-      ready() {
-        super.ready();
-
-        if (document.doctype === null) {
-          console.warn(
-            '<vaadin-grid> requires the "standards mode" declaration. Please add <!DOCTYPE html> to the HTML document.'
-          );
-        }
-      }
-
     }
 
     customElements.define(GridElement.is, GridElement);
